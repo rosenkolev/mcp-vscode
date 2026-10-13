@@ -1,0 +1,110 @@
+name: Publish
+
+# Packages on every run; publishes to the VS Code Marketplace when a version tag such as v0.1.0 is
+# pushed, or when run by hand with mode "publish". Signs in with a Microsoft Entra ID managed identity
+# through GitHub OIDC, so no token is stored. Setup: PUBLISHING.md.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: What to do
+        type: choice
+        options:
+          - package
+          - publish
+          - show-identity
+        default: package
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  VSCE: npx --yes @vscode/vsce@3
+
+# The publish and show-identity jobs run in the GitHub environment "marketplace-publish", which must
+# equal the environment named in the managed identity's federated credential.
+
+jobs:
+  package:
+    if: inputs.mode != 'show-identity'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the tag matches the package version
+        if: github.ref_type == 'tag'
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - name: Check the JavaScript parses
+        run: find src -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Package
+        run: |
+          $VSCE ls
+          $VSCE package --out mcp-vscode.vsix
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp-vscode-vsix
+          path: mcp-vscode.vsix
+
+  publish:
+    needs: package
+    if: github.ref_type == 'tag' || inputs.mode == 'publish'
+    runs-on: ubuntu-latest
+    environment: marketplace-publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcp-vscode-vsix
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Publish to the VS Code Marketplace
+        run: $VSCE publish --packagePath mcp-vscode.vsix --azure-credential --skip-duplicate
+
+      - name: Attach the package to a GitHub release
+        if: github.ref_type == 'tag'
+        run: gh release create "$GITHUB_REF_NAME" mcp-vscode.vsix --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # One-time setup step: prints the id the Marketplace knows the managed identity by, to add it as a
+  # publisher member. See PUBLISHING.md.
+  show-identity:
+    if: inputs.mode == 'show-identity'
+    runs-on: ubuntu-latest
+    environment: marketplace-publish
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Print the Marketplace id of the identity
+        run: |
+          az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv

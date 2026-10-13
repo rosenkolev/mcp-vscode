@@ -1,0 +1,32 @@
+{
+  "folders": [{ "path": "a" }, { "path": "b" }],
+  "settings": {},
+  "launch": {
+    "configurations": [
+      {
+        "type": "node",
+        "request": "launch",
+        "name": "Workspace Debug",
+        "program": "${workspaceFolder:a}/main.js",
+        "console": "internalConsole"
+      }
+    ],
+    "compounds": [
+      { "name": "Both", "configurations": ["Workspace Debug", { "name": "Folder B", "folder": "b" }] },
+      { "name": "Broken", "configurations": ["Missing"] }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      { "label": "hello", "type": "shell", "command": "node -e \"console.log('hello task')\"", "problemMatcher": [] },
+      {
+        "label": "server",
+        "type": "shell",
+        "isBackground": true,
+        "command": "node -e \"setTimeout(() => console.log('READY'), 1000); setTimeout(() => {}, 60000)\"",
+        "problemMatcher": []
+      }
+    ]
+  }
+}

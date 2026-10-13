@@ -1,0 +1,159 @@
+{
+  "name": "mcp-vscode",
+  "displayName": "MCP VS Code",
+  "description": "Lets AI agents run tasks, terminals and commands, navigate, refactor and debug code, and search files in VS Code over MCP.",
+  "publisher": "rosenkolev",
+  "author": {
+    "name": "Rosen Kolev"
+  },
+  "version": "0.1.0",
+  "icon": "images/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rosenkolev/mcp-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rosenkolev/mcp-vscode/issues"
+  },
+  "homepage": "https://github.com/rosenkolev/mcp-vscode#readme",
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "mcp",
+    "model context protocol",
+    "agent",
+    "tasks",
+    "terminal",
+    "debug"
+  ],
+  "engines": {
+    "vscode": "^1.101.0"
+  },
+  "main": "./src/extension.js",
+  "files": [
+    "src/**/*.js",
+    "images/icon.png",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "scripts": {
+    "test:live": "node --test --test-concurrency=1 tests/live/live.test.js",
+    "package": "npx --yes @vscode/vsce@3 package",
+    "package:list": "npx --yes @vscode/vsce@3 ls"
+  },
+  "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "mcpVscode.server",
+        "label": "MCP VS Code"
+      }
+    ],
+    "configuration": {
+      "title": "MCP VS Code",
+      "properties": {
+        "mcpVscode.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Serve the MCP endpoint from this window."
+        },
+        "mcpVscode.port": {
+          "type": "number",
+          "default": 47391,
+          "description": "Local port of the MCP endpoint. Only the first window to bind it serves requests."
+        },
+        "mcpVscode.disabledTools": {
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "markdownDescription": "Tools the MCP endpoint neither lists nor runs, e.g. `install_extension`. User and workspace values add up: a workspace can disable more tools but cannot re-enable one disabled in user settings. Applies without a restart. `run_command` and `run_in_terminal` can reach most of what other tools do, so disable them too for a real lockdown.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "list_tasks",
+              "run_task",
+              "task_status",
+              "close_task",
+              "run_in_terminal",
+              "read_terminal",
+              "clear_terminal",
+              "list_commands",
+              "run_command",
+              "search_in_files",
+              "find_definition",
+              "find_references",
+              "get_hover",
+              "document_symbols",
+              "workspace_symbols",
+              "call_hierarchy",
+              "rename_symbol",
+              "code_actions",
+              "format_document",
+              "save_files",
+              "get_selection",
+              "get_diagnostics",
+              "list_debug_configs",
+              "start_debugging",
+              "stop_debugging",
+              "debug_control",
+              "debug_inspect",
+              "breakpoints",
+              "list_extensions",
+              "install_extension",
+              "uninstall_extension",
+              "get_workspace",
+              "list_tabs",
+              "open_file",
+              "close_tab",
+              "test_explorer",
+              "refresh_tests",
+              "run_tests",
+              "cancel_test_run",
+              "clear_test_results",
+              "list_output_channels",
+              "read_output_channel"
+            ]
+          }
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "mcpVscode.restartServer",
+        "title": "MCP VS Code: Restart Server"
+      },
+      {
+        "command": "mcpVscode.showLog",
+        "title": "MCP VS Code: Show Log"
+      },
+      {
+        "command": "mcpVscode.copyClaudeCommand",
+        "title": "MCP VS Code: Copy Claude Code Setup Command"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "mcp-vscode",
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Label of the task this run wraps."
+          },
+          "folder": {
+            "type": "string",
+            "description": "Workspace folder of the wrapped task."
+          }
+        }
+      }
+    ]
+  }
+}
