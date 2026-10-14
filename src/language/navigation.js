@@ -1,7 +1,7 @@
 'use strict';
 
 const vscode = require('vscode');
-const { limitLines, plural } = require('../shared/text');
+const { limitLines, plural, singleLine } = require('../shared/text');
 const { provide } = require('../shared/providers');
 const { pathProperty, maxResultsProperty } = require('../shared/schema');
 const { openDocument } = require('../workspace/paths');
@@ -80,6 +80,87 @@ async function callHierarchy(args) {
   return [heading, ...(lines.length ? limitLines(lines, args.max_results, MORE_HINT) : ['  none'])].join('\n');
 }
 
+const TYPE_COMMANDS = { supertypes: 'vscode.provideSupertypes', subtypes: 'vscode.provideSubtypes' };
+
+async function typeHierarchy(args) {
+  const { document, position } = await documentPosition(args);
+  const [item] = await provide('vscode.prepareTypeHierarchy', document.uri, position);
+  if (!item) {
+    return emptyResultMessage('class or interface', document, position);
+  }
+  const types = await provide(TYPE_COMMANDS[args.direction], item);
+  const lines = types.map((type) => `  ${describeCallItem(type)}`);
+  const heading = `${args.direction === 'supertypes' ? 'Supertypes' : 'Subtypes'} of ${describeCallItem(item)}:`;
+  return [heading, ...(lines.length ? limitLines(lines, args.max_results, MORE_HINT) : ['  none'])].join('\n');
+}
+
+/**
+ * Position where completion or signature help is asked: after `symbol` when it is given without
+ * `column`, e.g. after "user." or "fetch(".
+ */
+async function positionAfter(args) {
+  const { document, position } = await documentPosition(args);
+  return {
+    document,
+    position: args.column === undefined && args.symbol ? position.translate(0, args.symbol.length) : position,
+  };
+}
+
+const textOf = (value) => (typeof value === 'string' ? value : value?.value ?? '');
+
+async function signatureHelp(args) {
+  const { document, position } = await positionAfter(args);
+  const [help] = await provide('vscode.executeSignatureHelpProvider', document.uri, position);
+  if (!help?.signatures.length) {
+    return emptyResultMessage('call signature', document, position);
+  }
+  return help.signatures
+    .flatMap((signature, index) => {
+      const active = index === help.activeSignature;
+      const parameter = active ? signature.parameters[signature.activeParameter ?? help.activeParameter] : undefined;
+      const parameterLabel = Array.isArray(parameter?.label) ? signature.label.slice(...parameter.label) : parameter?.label;
+      return [
+        `${active ? '* ' : '  '}${signature.label}`,
+        ...(parameterLabel ? [`    current parameter: ${parameterLabel}${parameter.documentation ? ` - ${singleLine(textOf(parameter.documentation))}` : ''}`] : []),
+        ...(active && signature.documentation ? [`    ${singleLine(textOf(signature.documentation))}`] : []),
+      ];
+    })
+    .join('\n');
+}
+
+const completionLabel = (item) => (typeof item.label === 'string' ? item.label : item.label.label);
+
+function describeCompletion(item) {
+  const detail = item.detail ?? (typeof item.label === 'string' ? undefined : item.label.detail ?? item.label.description);
+  const kind = item.kind !== undefined ? ` (${vscode.CompletionItemKind[item.kind]})` : '';
+  return `${completionLabel(item)}${kind}${detail ? ` - ${singleLine(detail)}` : ''}`;
+}
+
+async function completions(args) {
+  const { document, position } = await positionAfter(args);
+  const [list] = await provide('vscode.executeCompletionItemProvider', document.uri, position);
+  const needle = args.filter?.toLowerCase();
+  const items = (list?.items ?? [])
+    .filter((item) => !needle || completionLabel(item).toLowerCase().includes(needle))
+    .sort((a, b) => (a.sortText ?? completionLabel(a)).localeCompare(b.sortText ?? completionLabel(b)));
+  if (!items.length) {
+    return emptyResultMessage(needle ? `completion containing "${args.filter}"` : 'completion', document, position);
+  }
+  return [
+    `${plural(items.length, 'completion')}:`,
+    ...limitLines(items.map(describeCompletion), args.max_results, `pass "filter" or ${MORE_HINT}`),
+  ].join('\n');
+}
+
+const afterSymbolColumn = {
+  column: {
+    type: 'integer',
+    minimum: 1,
+    description: 'Column (1-based) where the text would be typed. Default: right after "symbol".',
+  },
+  symbol: { type: 'string', description: 'Text on the line to place the cursor after, e.g. "user." or "fetch(".' },
+};
+
 function navigationTools() {
   return [
     {
@@ -129,6 +210,33 @@ function navigationTools() {
         max_results: maxResultsProperty,
       }),
       handler: callHierarchy,
+    },
+    {
+      name: 'type_hierarchy',
+      description: 'List the supertypes (base classes, implemented interfaces) or subtypes of the class or interface at a position.',
+      inputSchema: positionSchema({
+        direction: { type: 'string', enum: Object.keys(TYPE_COMMANDS), default: 'supertypes', description: 'Supertypes or subtypes.' },
+        max_results: maxResultsProperty,
+      }),
+      handler: typeHierarchy,
+    },
+    {
+      name: 'signature_help',
+      description:
+        'Signatures of the function being called at a position, with the current parameter and its documentation (as the parameter hints while typing a call).',
+      inputSchema: positionSchema(afterSymbolColumn),
+      handler: signatureHelp,
+    },
+    {
+      name: 'completions',
+      description:
+        'What the editor would suggest typing at a position (IntelliSense), e.g. the members of an object after "user.", with kind and type.',
+      inputSchema: positionSchema({
+        ...afterSymbolColumn,
+        filter: { type: 'string', description: 'Case-insensitive substring of the suggestion label.' },
+        max_results: maxResultsProperty,
+      }),
+      handler: completions,
     },
   ];
 }

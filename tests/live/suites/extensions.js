@@ -7,8 +7,11 @@ const { publisher, name } = require('../../../package.json');
 const SELF_ID = `${publisher}.${name}`;
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Small Marketplace extension for the install round trip; it goes into the run's own extensions folder. */
-const MARKETPLACE_EXTENSION = 'EditorConfig.EditorConfig';
+/**
+ * Small Marketplace extension for the install round trip; it goes into the run's own extensions folder.
+ * Microsoft's own publisher is trusted without asking, so the install needs no confirmation.
+ */
+const MARKETPLACE_EXTENSION = 'ms-vscode.hexeditor';
 const withNetwork = process.env.LIVE_TESTS_NETWORK === '1';
 
 /** @param {import('../harness/vscode').LiveVsCode} live */
@@ -31,12 +34,13 @@ module.exports = (live) =>
       const installed = await live.client.ok('install_extension', { id: MARKETPLACE_EXTENSION, timeout_seconds: 20 });
       // A fresh profile may ask to trust the publisher; the tool must then return instead of waiting forever.
       if (/still waiting after 20s/.test(installed)) {
-        t.diagnostic('VS Code asked for confirmation, so only the timeout reply was checked.');
+        t.skip('VS Code asked to trust the publisher, so only the timeout reply was checked.');
         return;
       }
-      assert.match(installed, /^Installed EditorConfig\.EditorConfig@/);
-      assert.match(await live.client.ok('list_extensions', { filter: 'editorconfig' }), / - (active|inactive) - /);
+      assert.match(installed, /^Installed ms-vscode\.hexeditor@/);
+      assert.match(await live.client.ok('list_extensions', { filter: 'hexeditor' }), / - (active|inactive) - /);
       assert.match(await live.client.ok('uninstall_extension', { id: MARKETPLACE_EXTENSION }), /Uninstalled/);
-      assert.match(await live.client.ok('list_extensions', { filter: 'editorconfig' }), / - uninstalled - /);
+      // A loaded extension shows as uninstalled until reload; one that never loaded is gone at once.
+      assert.match(await live.client.ok('list_extensions', { filter: 'hexeditor' }), / - uninstalled - |No matching extensions/);
     });
   });

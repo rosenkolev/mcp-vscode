@@ -6,6 +6,7 @@ const { provide } = require('../shared/providers');
 const { NO_ARGS, pathProperty } = require('../shared/schema');
 const { openDocument, relativePath } = require('../workspace/paths');
 const { saveProperty, applyEdit, documentEdit } = require('./edits');
+const { FileEditor } = require('./review');
 
 const MAX_SELECTION_CHARS = 20000;
 
@@ -36,9 +37,12 @@ async function saveAll() {
 }
 
 function describeSelection(document, selection) {
-  return selection.isEmpty
-    ? `Cursor at ${rangeText(selection)}, nothing selected.`
-    : `Selection ${rangeText(selection)}:\n${document.getText(selection).slice(0, MAX_SELECTION_CHARS)}`;
+  if (selection.isEmpty) {
+    return `Cursor at ${rangeText(selection)}, nothing selected.`;
+  }
+  const text = document.getText(selection);
+  const cut = text.length > MAX_SELECTION_CHARS ? `\n[cut to ${MAX_SELECTION_CHARS} of ${text.length} characters]` : '';
+  return `Selection ${rangeText(selection)}:\n${text.slice(0, MAX_SELECTION_CHARS)}${cut}`;
 }
 
 function getSelection() {
@@ -48,8 +52,43 @@ function getSelection() {
     : 'No active text editor.';
 }
 
-function documentTools() {
+/** @param {{ push(...items: { dispose(): any }[]): any }} subscriptions where the file editor is disposed */
+function documentTools(subscriptions) {
+  const editor = new FileEditor();
+  subscriptions.push(editor);
   return [
+    {
+      name: 'edit_file',
+      description:
+        'Replace exact text in a file, through the editor: unsaved changes are kept and the change is one Ctrl+Z step. Each "old_text" must occur once in the file. "review": true lists the edits unchecked in the Refactor Preview and waits for the user to tick the ones to keep and click Apply, or Discard; "show_diff" opens a diff of the result.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          path: pathProperty,
+          edits: {
+            type: 'array',
+            description: 'Replacements, applied together.',
+            items: {
+              type: 'object',
+              properties: {
+                old_text: { type: 'string', description: 'Exact text to replace, unique in the file.' },
+                new_text: { type: 'string', description: 'Replacement text; empty to delete.' },
+              },
+              required: ['old_text', 'new_text'],
+            },
+          },
+          review: {
+            type: 'boolean',
+            default: false,
+            description: 'Let the user review the edits in the Refactor Preview, tick the ones to keep and apply or discard them. The call waits for the decision.',
+          },
+          show_diff: { type: 'boolean', default: false, description: 'Open a diff of the file before and after the edit.' },
+          save: saveProperty,
+        },
+        required: ['path', 'edits'],
+      },
+      handler: (args) => editor.edit(args),
+    },
     {
       name: 'format_document',
       description: "Format a file with the formatter VS Code uses for its language (Prettier, the language's own, ...), without opening it.",

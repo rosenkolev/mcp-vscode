@@ -26,13 +26,13 @@ function formatPosition(uri, position) {
   return `${relativePath(uri)}:${positionText(position)}`;
 }
 
-/** Position from the 1-based `line` and `column`; without `column`, where `symbol` first occurs on the line. */
 function checkLine(document, line) {
   if (line > document.lineCount) {
     throw new Error(`Line ${line} is past the end of ${relativePath(document.uri)} (${document.lineCount} lines).`);
   }
 }
 
+/** Position from the 1-based `line` and `column`; without `column`, where `symbol` first occurs on the line. */
 function positionIn(document, { line, column, symbol }) {
   checkLine(document, line);
   if (column !== undefined) {

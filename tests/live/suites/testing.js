@@ -3,8 +3,10 @@
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 
-/** The isolated profile has no test extension, so these cover the Test Explorer tools without tests. */
-/** @param {import('../harness/vscode').LiveVsCode} live */
+/**
+ * The isolated profile has no test extension, so these cover the Test Explorer tools without tests.
+ * @param {import('../harness/vscode').LiveVsCode} live
+ */
 module.exports = (live) =>
   describe('test explorer', () => {
     it('reports that no tests are discovered', async () => {

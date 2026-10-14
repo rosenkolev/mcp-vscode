@@ -3,10 +3,12 @@
 const vscode = require('vscode');
 const { nextEvent, anyEvent } = require('../shared/async');
 const { plural } = require('../shared/text');
-const { NO_ARGS, pathProperty, timeoutProperty } = require('../shared/schema');
+const { NO_ARGS, pathProperty, timeoutProperty, maxLinesProperty, filterProperty } = require('../shared/schema');
+const { sinceProperty, waitProperties, waitAndReport } = require('../runs/report');
 const { resolveWorkspaceUri, relativePath } = require('../workspace/paths');
 const { describeSession, inspectDebugger } = require('./inspect');
 const { DebugState } = require('./state');
+const { ExceptionBreakpoints } = require('./exceptions');
 
 /** @typedef {import('./state').DebugState} DebugState */
 
@@ -24,10 +26,11 @@ const CONTROL_COMMANDS = {
 const waitProperty = timeoutProperty(30, 'How long to wait for the debugger to pause (breakpoint or step) or end.');
 
 /**
- * A thread paused (the value is `{ session, threadId }`) or a root session ended (the value is the
- * session). A child session, such as the one js-debug starts per Node process, ending is not a stop.
+ * A thread paused (the value is `{ session, threadId }` from DebugState) or a root session ended (the
+ * value is the session). A child session, such as the one js-debug starts per Node process, ending is
+ * not a stop.
  */
-const isStopEvent = (value) => Boolean(value.session) || !value.parentSession;
+const isStopEvent = (value) => value.threadId !== undefined || !value.parentSession;
 
 /** Launch configurations and compounds of one scope: a `[folder]`'s launch.json or the `[workspace]` file. */
 function launchScope(folder, inspectKey, where) {
@@ -120,25 +123,53 @@ function scopeOfLaunch(name, where) {
  * action that causes the stop, so a stop that happens at once is not missed.
  * @param {DebugState} state
  */
-async function waitForStop(state, timeoutSeconds) {
-  const events = anyEvent(state.onDidStop, vscode.debug.onDidTerminateDebugSession);
-  const stopped = await nextEvent(events, isStopEvent, timeoutSeconds * 1000);
+async function waitForStop(state, timeoutSeconds, onCancel) {
+  const events = anyEvent(state.onDidStop, vscode.debug.onDidTerminateDebugSession, onCancel);
+  const stopped = await nextEvent(events, (value) => value === undefined || isStopEvent(value), timeoutSeconds * 1000);
   if (!stopped) {
     return `${describeSession(state)} Not paused within ${timeoutSeconds}s.`;
   }
   return stopped.session ? inspectDebugger(state, { max_variables: 0 }, stopped.session) : `Session "${stopped.name}" ended.`;
 }
 
+/**
+ * Runs `action`, which may cause a stop, and then waits for that stop when `wait` is set. The wait
+ * starts before the action, so a stop that happens at once is not missed, and is cancelled when the
+ * action fails, so no listener outlives the call.
+ */
+async function withStopWait(state, wait, timeoutSeconds, action) {
+  if (!wait) {
+    await action();
+    return describeSession(state);
+  }
+  const cancel = new vscode.EventEmitter();
+  const stop = waitForStop(state, timeoutSeconds, cancel.event);
+  try {
+    await action();
+  } catch (error) {
+    cancel.fire();
+    await stop;
+    throw error;
+  } finally {
+    cancel.dispose();
+  }
+  return stop;
+}
+
 /** @param {DebugState} state */
 async function startDebugging(state, { name, folder, no_debug, wait_for_pause, timeout_seconds }) {
   const targets = launchTargets(scopeOfLaunch(name, folder), name);
-  const stop = wait_for_pause ? waitForStop(state, timeout_seconds) : undefined;
-  for (const [targetFolder, target] of targets) {
-    if (!(await vscode.debug.startDebugging(targetFolder, target, { noDebug: no_debug }))) {
-      throw new Error(`"${target.name ?? target}" did not start. Check list_debug_configs and the Debug Console.`);
+  return withStopWait(state, wait_for_pause, timeout_seconds, async () => {
+    const started = [];
+    for (const [targetFolder, target] of targets) {
+      if (await vscode.debug.startDebugging(targetFolder, target, { noDebug: no_debug })) {
+        started.push(target.name ?? target);
+      } else {
+        const partial = started.length ? ` ${started.join(', ')} started and keep running; stop them with stop_debugging.` : '';
+        throw new Error(`"${target.name ?? target}" did not start. Check list_debug_configs and the Debug Console.${partial}`);
+      }
     }
-  }
-  return stop ?? describeSession(state);
+  });
 }
 
 /**
@@ -163,9 +194,8 @@ async function controlDebugger(state, { action, timeout_seconds }) {
   if (!vscode.debug.activeDebugSession) {
     throw new Error('No debug session is running. Start one with start_debugging.');
   }
-  const stop = action === 'pause' && state.pausedThread() ? undefined : waitForStop(state, timeout_seconds);
-  await vscode.commands.executeCommand(CONTROL_COMMANDS[action]);
-  return stop ?? describeSession(state);
+  const wait = !(action === 'pause' && state.pausedThread());
+  return withStopWait(state, wait, timeout_seconds, () => vscode.commands.executeCommand(CONTROL_COMMANDS[action]));
 }
 
 function describeBreakpoint(breakpoint) {
@@ -193,7 +223,11 @@ function matchesLocation(breakpoint, uri, line) {
   );
 }
 
-function manageBreakpoints({ action, path, line, condition, log_message }) {
+/** @param {import('./exceptions').ExceptionBreakpoints} exceptionBreakpoints */
+function manageBreakpoints(exceptionBreakpoints, { action, path, line, condition, log_message, exceptions }) {
+  if (action === 'exceptions') {
+    return exceptions ? exceptionBreakpoints.set(exceptions) : exceptionBreakpoints.describe();
+  }
   const uri = path && resolveWorkspaceUri(path);
   if (action === 'add') {
     if (!uri || line === undefined) {
@@ -211,14 +245,18 @@ function manageBreakpoints({ action, path, line, condition, log_message }) {
     vscode.debug.removeBreakpoints(removed);
     return `Removed ${plural(removed.length, 'breakpoint')}.`;
   }
+  if (action !== 'list') {
+    throw new Error(`Unknown action "${action}".`);
+  }
   const all = vscode.debug.breakpoints.map(describeBreakpoint);
-  return all.length ? all.join('\n') : 'No breakpoints.';
+  return [all.length ? all.join('\n') : 'No breakpoints.', exceptionBreakpoints.describe()].join('\n');
 }
 
-/** @param {{ push(...items: { dispose(): any }[]): any }} subscriptions where the debug state tracker is disposed */
+/** @param {{ push(...items: { dispose(): any }[]): any }} subscriptions where the debug state trackers are disposed */
 function debugTools(subscriptions) {
   const state = new DebugState();
-  subscriptions.push(state);
+  const exceptionBreakpoints = new ExceptionBreakpoints();
+  subscriptions.push(state, exceptionBreakpoints);
   return [
     {
       name: 'list_debug_configs',
@@ -269,7 +307,7 @@ function debugTools(subscriptions) {
     {
       name: 'debug_inspect',
       description:
-        'State of the debug session; when paused, the call stack and the variables of the selected frame. "expression" is evaluated in that frame, as in the Debug Console.',
+        'State of the debug session; when paused, the exception that caused the pause (type, message, stack), the call stack and the variables of the selected frame. "expression" is evaluated in that frame, as in the Debug Console.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -281,18 +319,45 @@ function debugTools(subscriptions) {
     },
     {
       name: 'breakpoints',
-      description: 'List, add or remove breakpoints. "add" supports a condition and a log message (logpoint).',
+      description:
+        'List, add or remove breakpoints. "add" supports a condition and a log message (logpoint). "exceptions" sets which exceptions the debugger pauses on, e.g. ["uncaught"]; without "exceptions" it lists the filters the debugger offers.',
       inputSchema: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'add', 'remove'], default: 'list', description: 'What to do.' },
+          action: { type: 'string', enum: ['list', 'add', 'remove', 'exceptions'], default: 'list', description: 'What to do.' },
           path: { ...pathProperty, description: `${pathProperty.description} For "remove", omit to remove all.` },
           line: { type: 'integer', minimum: 1, description: 'Line (1-based). For "remove", omit to remove all in "path".' },
           condition: { type: 'string', description: 'Break only when this expression is true.' },
           log_message: { type: 'string', description: 'Log this message instead of breaking; {expression} is interpolated.' },
+          exceptions: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'For "exceptions": filter ids to pause on, e.g. ["uncaught"] or ["all"] for Node; [] to stop pausing on exceptions.',
+          },
         },
       },
-      handler: manageBreakpoints,
+      handler: (args) => manageBreakpoints(exceptionBreakpoints, args),
+    },
+    {
+      name: 'debug_output',
+      description:
+        'Debug Console output of the debug session: what the program printed (stdout, stderr), console.log calls and logpoint messages. Without an active session, the latest session that printed.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          since: sinceProperty,
+          filter: filterProperty,
+          max_lines: maxLinesProperty,
+          ...waitProperties(false),
+        },
+      },
+      handler: async (args) => {
+        const run = state.latestOutput();
+        if (!run) {
+          return `${describeSession(state)} No Debug Console output captured yet.`;
+        }
+        return waitAndReport(run, args);
+      },
     },
   ];
 }

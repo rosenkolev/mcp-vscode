@@ -70,6 +70,9 @@ async function openFile({ path: input, line, column, preview, focus }) {
   if ((await vscode.workspace.fs.stat(uri)).type & vscode.FileType.Directory) {
     throw new Error(`${relativePath(uri)} is a folder; open_file opens files.`);
   }
+  if (column !== undefined && line === undefined) {
+    throw new Error('"column" needs "line".');
+  }
   const position = line !== undefined ? new vscode.Position(line - 1, (column ?? 1) - 1) : undefined;
   const selection = position && new vscode.Range(position, position);
   await vscode.commands.executeCommand('vscode.open', uri, { preview, preserveFocus: !focus, selection });

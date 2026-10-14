@@ -40,7 +40,7 @@ function terminalTools(terminals) {
     {
       name: 'run_in_terminal',
       description:
-        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent.',
+        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. The terminal closes once the command ends unless keep_open is set; its output stays readable with read_terminal. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent and the terminal stays open.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -50,6 +50,11 @@ function terminalTools(terminals) {
             description: `Directory to run in. ${pathProperty.description} Default: the current directory of the terminal.`,
           },
           terminal: namedTerminalProperty,
+          keep_open: {
+            type: 'boolean',
+            default: false,
+            description: 'Keep the terminal open after the command ends, so the user can look at its output.',
+          },
           ...waitProperties(true),
           max_lines: maxLinesProperty,
         },
@@ -66,7 +71,7 @@ function terminalTools(terminals) {
     {
       name: 'read_terminal',
       description:
-        'Read the state, exit code and output of a command run in a terminal, including commands the user typed. Only commands run with shell integration since the extension started are captured. Without "terminal", lists the open terminals with their latest command.',
+        'Read the state, exit code and output of a command run in a terminal, including commands the user typed. Only commands run with shell integration since the extension started are captured. A terminal that run_in_terminal closed is still readable by its name. Without "terminal", lists the open terminals with their latest command.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -86,7 +91,7 @@ function terminalTools(terminals) {
           return terminals.list().map(describeTerminal).join('\n') || 'No terminals are open.';
         }
         const run = terminals.find(args.terminal, args.command);
-        return waitAndReport(run, args, args.since ?? run.lineCount, exitCodeNotes);
+        return waitAndReport(run, args, undefined, exitCodeNotes);
       },
     },
     {
@@ -99,6 +104,47 @@ function terminalTools(terminals) {
       handler: async ({ terminal }) => {
         await terminals.clear(terminal);
         return `Cleared terminal "${terminal}".`;
+      },
+    },
+    {
+      name: 'send_to_terminal',
+      description:
+        'Type text into a terminal, e.g. "y" to answer a prompt or input for a running program, or press Ctrl+C to interrupt it. Works in task terminals too. With a wait_* argument, then waits like read_terminal and returns the new output.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          terminal: namedTerminalProperty,
+          text: { type: 'string', description: 'Text to type.' },
+          enter: { type: 'boolean', default: true, description: 'Press Enter after the text.' },
+          interrupt: { type: 'boolean', default: false, description: 'Press Ctrl+C first.' },
+          max_lines: maxLinesProperty,
+          ...waitProperties(false),
+        },
+      },
+      handler: async (args) => {
+        if (args.text === undefined && !args.interrupt) {
+          throw new Error('Pass "text", "interrupt": true, or both.');
+        }
+        const run = terminals.send(args.terminal, args);
+        const sent = [args.interrupt && 'Ctrl+C', args.text !== undefined && `"${args.text}"${args.enter ? ' + Enter' : ''}`];
+        const summary = `Sent ${sent.filter(Boolean).join(', then ')} to terminal "${args.terminal}".`;
+        if (!run) {
+          return `${summary} No captured command is running there.`;
+        }
+        return `${summary}\n${await waitAndReport(run, { ...args, since: run.lineCount }, run.lineCount, exitCodeNotes)}`;
+      },
+    },
+    {
+      name: 'close_terminal',
+      description: 'Close a terminal, which ends the command or task running in it. Its output stays readable with read_terminal.',
+      inputSchema: {
+        type: 'object',
+        properties: { terminal: terminalProperty },
+        required: ['terminal'],
+      },
+      handler: async ({ terminal }) => {
+        const running = terminals.close(terminal);
+        return `Closed terminal "${terminal}"${running ? `, ending "${running.command}"` : ''}.`;
       },
     },
   ];

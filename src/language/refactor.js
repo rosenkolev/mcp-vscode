@@ -19,6 +19,9 @@ async function renameSymbol(args) {
 /** Whole lines from `line` to `end_line`; a code action provider needs a range, not a position. */
 function lineRange(document, { line, end_line }) {
   checkLine(document, line);
+  if (end_line !== undefined && end_line < line) {
+    throw new Error(`"end_line" (${end_line}) is before "line" (${line}).`);
+  }
   const last = Math.min(end_line ?? line, document.lineCount);
   return new vscode.Range(line - 1, 0, last - 1, document.lineAt(last - 1).text.length);
 }

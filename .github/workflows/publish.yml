@@ -2,7 +2,7 @@ name: Publish
 
 # Packages on every run; publishes to the VS Code Marketplace when a version tag such as v0.1.0 is
 # pushed, or when run by hand with mode "publish". Signs in with a Microsoft Entra ID managed identity
-# through GitHub OIDC, so no token is stored. Setup: PUBLISHING.md.
+# through GitHub OIDC, so no token is stored. Setup: "Releasing" in CONTRIBUTING.md.
 on:
   push:
     tags: ['v*.*.*']
@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   # One-time setup step: prints the id the Marketplace knows the managed identity by, to add it as a
-  # publisher member. See PUBLISHING.md.
+  # publisher member. See "Releasing" in CONTRIBUTING.md.
   show-identity:
     if: inputs.mode == 'show-identity'
     runs-on: ubuntu-latest

@@ -12,7 +12,7 @@ const DISABLED_TOOLS_SETTING = 'disabledTools';
  */
 function disabledTools() {
   const inspected = vscode.workspace.getConfiguration(SETTINGS_SECTION).inspect(DISABLED_TOOLS_SETTING);
-  const scopes = [inspected?.globalValue, inspected?.workspaceValue, inspected?.workspaceFolderValue];
+  const scopes = [inspected?.globalValue, inspected?.workspaceValue];
   return new Set(scopes.flatMap((names) => (Array.isArray(names) ? names : [])));
 }
 

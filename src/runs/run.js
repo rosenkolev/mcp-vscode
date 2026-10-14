@@ -4,6 +4,7 @@ const vscode = require('vscode');
 
 const MAX_BUFFERED_LINES = 20000;
 const TRIM_SLACK_LINES = 1000;
+const MAX_PARTIAL_LINE_CHARS = 64 * 1024;
 // CSI sequences, OSC sequences (BEL or ST terminated) and two-character escapes.
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\x5c)|\x1b[@-Z\x5c-_]/g;
 const ENDED_STATES = ['exited', 'terminated', 'failed'];
@@ -61,8 +62,15 @@ class Run {
   }
 
   append(text) {
+    // Stripped after joining, since an escape sequence may be split across chunks; the unfinished line
+    // is capped below, so the rescans stay small.
     const parts = (this.partialLine + text).replace(ANSI_PATTERN, '').split(/\r?\n/);
     this.partialLine = redrawnTail(parts.pop() ?? '');
+    if (this.partialLine.length > MAX_PARTIAL_LINE_CHARS) {
+      // A program that never prints a newline still gets lines, instead of one growing string.
+      parts.push(this.partialLine);
+      this.partialLine = '';
+    }
     for (const part of parts) {
       this.lines.push(lastSegment(part));
     }
@@ -81,6 +89,18 @@ class Run {
       this.state = 'running';
     }
     this.changed.fire();
+  }
+
+  /** Records the exit code of a run whose end is reported separately, as for tasks VS Code runs itself. */
+  setExitCode(exitCode) {
+    this.exitCode = exitCode;
+    this.changed.fire();
+  }
+
+  /** Ends a run that could not start, with the reason as its last output line. */
+  fail(message) {
+    this.append(`Failed to start: ${message}\n`);
+    this.finish('failed');
   }
 
   finish(state, exitCode) {
@@ -103,21 +123,29 @@ class Run {
    * @returns {{ entries: [number, string][], truncated: boolean, nextSince: number, total: number }}
    */
   read({ since, maxLines, filter }) {
-    const buffered = this.partialLine ? [...this.lines, lastSegment(this.partialLine)] : this.lines;
+    const partial = this.partialLine ? [lastSegment(this.partialLine)] : [];
+    const total = this.lineCount + partial.length;
+    const textAt = (index) => (index < this.lineCount ? this.lines[index - this.droppedLines] : partial[0]);
     // Lines before `since` are skipped up front, so a poll of a long run does not walk the whole buffer.
-    const first = since === undefined ? 0 : Math.max(since - this.droppedLines, 0);
-    /** @type {[number, string][]} */
-    const candidates = buffered.slice(first).map((text, index) => [this.droppedLines + first + index, text]);
-    const matching = filter ? candidates.filter(([, text]) => filter.test(text)) : candidates;
+    const first = since === undefined ? this.droppedLines : Math.max(since, this.droppedLines);
+    /** @type {number[]} */
+    const matching = [];
+    for (let index = first; index < total; index++) {
+      if (!filter || filter.test(textAt(index))) {
+        matching.push(index);
+      }
+    }
     const truncated = matching.length > maxLines;
-    const entries = since === undefined ? matching.slice(-maxLines) : matching.slice(0, maxLines);
-    const afterLast = entries.length ? entries[entries.length - 1][0] + 1 : (since ?? this.lineCount);
+    const selected = since === undefined ? matching.slice(-maxLines) : matching.slice(0, maxLines);
+    const afterLast = selected.length ? selected[selected.length - 1] + 1 : (since ?? this.lineCount);
     return {
-      entries,
+      entries: selected.map((index) => [index, textAt(index)]),
       truncated,
       // The line still being written is shown but not consumed, so the next read returns it complete.
       nextSince: Math.min(afterLast, this.lineCount),
-      total: this.droppedLines + buffered.length,
+      total,
+      /** Lines before this index were dropped from the buffer and cannot be read. */
+      dropped: since !== undefined && since < this.droppedLines ? this.droppedLines : 0,
     };
   }
 

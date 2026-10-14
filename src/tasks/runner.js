@@ -105,12 +105,7 @@ class TaskRunner {
       }),
       vscode.tasks.onDidStartTask(({ execution }) => this.track(execution)),
       vscode.tasks.onDidStartTaskProcess(({ execution, processId }) => this.nativeRun(execution)?.setRunning(processId)),
-      vscode.tasks.onDidEndTaskProcess(({ execution, exitCode }) => {
-        const run = this.nativeRun(execution);
-        if (run) {
-          run.exitCode = exitCode;
-        }
-      }),
+      vscode.tasks.onDidEndTaskProcess(({ execution, exitCode }) => this.nativeRun(execution)?.setExitCode(exitCode)),
       vscode.tasks.onDidEndTask(({ execution }) => {
         const run = this.liveRun(execution);
         if (!run) {
@@ -138,11 +133,16 @@ class TaskRunner {
     return run?.captured ? undefined : run;
   }
 
-  /** Makes `run` the latest run of its task. A replaced live run is not disposed, so its waiters still finish. */
+  /**
+   * Makes `run` the latest run of its task. A replaced live run ends as terminated, so its waiters
+   * finish and it never stays "running" without the events that would end it; it is not disposed.
+   */
   setLatest(run) {
     const previous = this.runs.get(run.key);
     if (previous?.ended) {
       previous.dispose();
+    } else {
+      previous?.finish('terminated');
     }
     this.runs.set(run.key, run);
   }
@@ -212,8 +212,13 @@ class TaskRunner {
     return [...this.runs.values()].sort((a, b) => b.startedAt - a.startedAt);
   }
 
-  async run(name, { folder, restart, capture }) {
+  async run(name, { folder, restart, capture, keep_open }) {
     const task = await this.findTask(name, folder);
+    // An explicit presentation.close of tasks.json wins over the default.
+    task.presentationOptions = {
+      ...task.presentationOptions,
+      close: keep_open ? false : (task.presentationOptions.close ?? true),
+    };
     const previous = this.runs.get(keyOf(task));
     if (previous && !previous.ended) {
       if (!restart) {
@@ -238,8 +243,7 @@ class TaskRunner {
       const execution = await vscode.tasks.executeTask(spec ? toCapturedTask(task, run, spec, this.log) : task);
       run.execution ??= execution;
     } catch (error) {
-      run.append(`Failed to start: ${messageOf(error)}\n`);
-      run.finish('failed');
+      run.fail(messageOf(error));
       throw error;
     }
     return run;
@@ -285,6 +289,7 @@ class TaskRunner {
       if (!run.ended && run.child) {
         killTree(run.child);
       }
+      run.finish('terminated');
       run.dispose();
     }
     this.disposables.forEach((disposable) => disposable.dispose());

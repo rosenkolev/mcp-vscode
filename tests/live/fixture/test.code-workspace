@@ -9,6 +9,13 @@
         "name": "Workspace Debug",
         "program": "${workspaceFolder:a}/main.js",
         "console": "internalConsole"
+      },
+      {
+        "type": "node",
+        "request": "launch",
+        "name": "Throws",
+        "program": "${workspaceFolder:a}/throws.js",
+        "console": "internalConsole"
       }
     ],
     "compounds": [
@@ -19,6 +26,12 @@
   "tasks": {
     "version": "2.0.0",
     "tasks": [
+      {
+        "label": "ask",
+        "type": "shell",
+        "command": "node -e \"console.log('ASK'); process.stdin.once('data', (d) => { console.log('task got ' + d.toString().trim()); process.exit(0); })\"",
+        "problemMatcher": []
+      },
       { "label": "hello", "type": "shell", "command": "node -e \"console.log('hello task')\"", "problemMatcher": [] },
       {
         "label": "server",

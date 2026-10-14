@@ -9,6 +9,7 @@ const { before, after } = require('node:test');
 const { LiveVsCode } = require('./harness/vscode');
 
 const START_TIMEOUT_MS = 180000;
+/** Run in this order, in one window. `settings` goes last: it changes the shared client's token and the settings files. */
 const SUITES = [
   'workspace',
   'commands',

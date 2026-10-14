@@ -1,11 +1,12 @@
-'use strict';
+﻿'use strict';
 
 const assert = require('node:assert/strict');
 const { describe, it, before } = require('node:test');
-const { eventually } = require('../harness/vscode');
+const { eventually } = require('../harness/poll');
 
 const LANGUAGE_SERVER_TIMEOUT_MS = 60000;
 const FILE = 'a/calc.js';
+const SHAPES = 'a/shapes.js';
 
 /** @param {import('../harness/vscode').LiveVsCode} live */
 module.exports = (live) =>
@@ -16,6 +17,11 @@ module.exports = (live) =>
         async () => /addNumbers \(Function\)/.test(await live.client.ok('document_symbols', { path: FILE })),
         LANGUAGE_SERVER_TIMEOUT_MS,
         'the TypeScript server',
+      );
+      await eventually(
+        async () => /Shape \(Class\)/.test(await live.client.ok('document_symbols', { path: SHAPES })),
+        LANGUAGE_SERVER_TIMEOUT_MS,
+        'the TypeScript server to load a/shapes.js',
       );
     });
 
@@ -43,6 +49,24 @@ module.exports = (live) =>
 
     it('finds symbols across the workspace', async () => {
       assert.match(await live.client.ok('workspace_symbols', { query: 'addNumbers' }), /addNumbers.*a\/calc\.js:3/);
+    });
+
+    it('answers type hierarchy without a provider', async () => {
+      // VS Code's built-in TypeScript and JavaScript support has no type hierarchy provider; Java, C# and C++ extensions do.
+      const text = await live.client.ok('type_hierarchy', { path: SHAPES, line: 14, symbol: 'Square' });
+      assert.match(text, /No class or interface at a\/shapes\.js:14:7/);
+    });
+
+    it('returns the signature and the current parameter inside a call', async () => {
+      const text = await live.client.ok('signature_help', { path: SHAPES, line: 22, symbol: 'scale(3, ' });
+      assert.match(text, /\* scale\(factor: number, unit: string\)/);
+      assert.match(text, /current parameter: unit: string - unit of the result/);
+    });
+
+    it('lists completions after a member access, filtered', async () => {
+      const text = await live.client.ok('completions', { path: SHAPES, line: 22, symbol: 'square.', filter: 'sc' });
+      assert.match(text, /^scale \(Method\)/m);
+      assert.doesNotMatch(text, /^side /m);
     });
 
     it('reports a symbol that is not on the line, and a line past the end', async () => {

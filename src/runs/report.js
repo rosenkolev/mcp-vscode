@@ -67,7 +67,10 @@ function report(run, { since, max_lines, filter }, notes) {
     );
     return lines.join('\n');
   }
-  const { entries, truncated, nextSince, total } = run.read({ since, maxLines: max_lines, filter });
+  const { entries, truncated, nextSince, total, dropped } = run.read({ since, maxLines: max_lines, filter });
+  if (dropped) {
+    lines.push(`Lines before ${dropped} were dropped from the buffer and are only in the terminal.`);
+  }
   if (entries.length) {
     const range = `lines ${entries[0][0]}-${entries[entries.length - 1][0]} of ${total}`;
     const qualifiers = `${truncated ? `, truncated to ${max_lines}` : ''}${filter ? ', filtered' : ''}`;
@@ -80,10 +83,11 @@ function report(run, { since, max_lines, filter }, notes) {
 }
 
 /**
- * Waits as the wait_* arguments ask, from `fromLine` on, then reports. `notesOf(run)` adds notes that
+ * Waits as the wait_* arguments ask, then reports. The wait searches for a pattern from `fromLine` on,
+ * which defaults to `since`, else to the lines printed after the call. `notesOf(run)` adds notes that
  * depend on the state after the wait.
  */
-async function waitAndReport(run, args, fromLine, notesOf = () => []) {
+async function waitAndReport(run, args, fromLine = args.since ?? run.lineCount, notesOf = () => []) {
   const notes = await waitAsRequested(run, args, fromLine);
   return report(run, args, [...notes, ...notesOf(run)]);
 }

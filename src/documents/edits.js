@@ -19,10 +19,15 @@ async function applyEdit(edit, save) {
   if (!(await vscode.workspace.applyEdit(edit))) {
     throw new Error('VS Code refused the edit; a file may have changed since it was computed.');
   }
+  const names = uris.map((uri) => relativePath(uri));
   if (save) {
-    await Promise.all(uris.map(async (uri) => (await vscode.workspace.openTextDocument(uri)).save()));
+    const saved = await Promise.all(uris.map(async (uri) => (await vscode.workspace.openTextDocument(uri)).save()));
+    const unsaved = names.filter((name, index) => !saved[index]);
+    if (unsaved.length) {
+      throw new Error(`Changed ${plural(uris.length, 'file')}, but could not save: ${unsaved.join(', ')}.`);
+    }
   }
-  return `Changed ${plural(uris.length, 'file')}, ${save ? 'saved' : 'unsaved'}: ${uris.map((uri) => relativePath(uri)).join(', ')}.`;
+  return `Changed ${plural(uris.length, 'file')}, ${save ? 'saved' : 'unsaved'}: ${names.join(', ')}.`;
 }
 
 /** WorkspaceEdit of TextEdits in one document. */

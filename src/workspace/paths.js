@@ -1,13 +1,15 @@
 'use strict';
 
 const vscode = require('vscode');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
 /**
  * Resolves a path given by a tool caller. Relative paths may start with a workspace folder name, or be
  * one, as `vscode.workspace.asRelativePath` prints them in a multi-root workspace; otherwise they resolve
- * against the first workspace folder.
+ * against the first workspace folder. In a single-folder workspace, a path that exists under the folder
+ * wins over the folder-name reading, so a subfolder named like the workspace folder stays reachable.
  */
 function resolveWorkspacePath(input) {
   if (path.isAbsolute(input)) {
@@ -16,10 +18,11 @@ function resolveWorkspacePath(input) {
   const folders = vscode.workspace.workspaceFolders ?? [];
   const [first, ...rest] = input.split(/[/\x5c]/);
   const named = folders.find((folder) => folder.name === first);
-  if (named) {
-    return path.join(named.uri.fsPath, ...rest);
+  const plain = path.resolve(folders[0]?.uri.fsPath ?? os.homedir(), input);
+  if (!named || (folders.length === 1 && fs.existsSync(plain))) {
+    return plain;
   }
-  return path.resolve(folders[0]?.uri.fsPath ?? os.homedir(), input);
+  return path.join(named.uri.fsPath, ...rest);
 }
 
 /** Path as tools print it: relative to the workspace, prefixed with the folder name in a multi-root workspace. */

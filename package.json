@@ -6,7 +6,7 @@
   "author": {
     "name": "Rosen Kolev"
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "icon": "images/icon.png",
   "license": "MIT",
   "repository": {
@@ -44,7 +44,8 @@
     "onStartupFinished"
   ],
   "scripts": {
-    "test:live": "node --test --test-concurrency=1 tests/live/live.test.js",
+    "test:live": "node --test --test-concurrency=1 tests/live/live.test.js tests/live/windows.test.js",
+    "test:live:windows": "node --test --test-concurrency=1 tests/live/windows.test.js",
     "package": "npx --yes @vscode/vsce@3 package",
     "package:list": "npx --yes @vscode/vsce@3 ls"
   },
@@ -64,9 +65,17 @@
           "description": "Serve the MCP endpoint from this window."
         },
         "mcpVscode.port": {
-          "type": "number",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
           "default": 47391,
-          "description": "Local port of the MCP endpoint. Only the first window to bind it serves requests."
+          "description": "Local port of the MCP endpoint. The first window to bind it runs each agent's calls in the agent's own window."
+        },
+        "mcpVscode.authToken": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "markdownDescription": "When set, clients must send the header `Authorization: Bearer <token>`. Keeps other local programs out. Read from user settings only. **Copy Claude Code Setup Command** includes the header."
         },
         "mcpVscode.disabledTools": {
           "type": "array",
@@ -82,18 +91,24 @@
               "close_task",
               "run_in_terminal",
               "read_terminal",
+              "send_to_terminal",
               "clear_terminal",
+              "close_terminal",
               "list_commands",
               "run_command",
               "search_in_files",
               "find_definition",
               "find_references",
               "get_hover",
+              "signature_help",
+              "completions",
               "document_symbols",
               "workspace_symbols",
               "call_hierarchy",
+              "type_hierarchy",
               "rename_symbol",
               "code_actions",
+              "edit_file",
               "format_document",
               "save_files",
               "get_selection",
@@ -103,6 +118,7 @@
               "stop_debugging",
               "debug_control",
               "debug_inspect",
+              "debug_output",
               "breakpoints",
               "list_extensions",
               "install_extension",

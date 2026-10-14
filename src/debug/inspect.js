@@ -45,7 +45,8 @@ const isInternalFrame = (frame) => frame.presentationHint === 'subtle' || frame.
 function stackLines(stackFrames) {
   const shown = stackFrames.filter((frame, index) => index === 0 || !isInternalFrame(frame));
   const hidden = stackFrames.length - shown.length;
-  return ['Call stack:', ...shown.map((frame) => `  ${frameLine(frame)}`), ...(hidden ? [`  (${hidden} internal frames hidden)`] : [])];
+  const notes = [hidden && `(${hidden} internal frames hidden)`, stackFrames.length >= MAX_FRAMES && `(first ${MAX_FRAMES} frames)`].filter(Boolean);
+  return ['Call stack:', ...shown.map((frame) => `  ${frameLine(frame)}`), ...notes.map((note) => `  ${note}`)];
 }
 
 /** One line, cut to a readable length; debuggers print objects and functions over several lines. */
@@ -54,17 +55,43 @@ function valueText(value) {
   return line.length > MAX_VALUE_CHARS ? `${line.slice(0, MAX_VALUE_CHARS)}...` : line;
 }
 
-/** Variables of the frame's non-expensive scopes (usually Locals), as "name = value" lines. */
+/** Variables of the frame's non-expensive scopes (usually Locals), as "name = value" lines; a scope that fails says so. */
 async function scopeLines(session, frameId, maxVariables) {
   const { scopes } = await session.customRequest('scopes', { frameId });
   const cheap = scopes.filter((scope) => !scope.expensive);
   const groups = await Promise.all(
     cheap.map(async (scope) => {
-      const { variables } = await session.customRequest('variables', { variablesReference: scope.variablesReference });
-      return [`${scope.name}:`, ...variables.slice(0, maxVariables).map((variable) => `  ${variable.name} = ${valueText(variable.value)}`)];
+      try {
+        const { variables } = await session.customRequest('variables', { variablesReference: scope.variablesReference, count: maxVariables });
+        return [`${scope.name}:`, ...variables.slice(0, maxVariables).map((variable) => `  ${variable.name} = ${valueText(variable.value)}`)];
+      } catch (error) {
+        return [`${scope.name}: not readable (${singleLine(error.message)})`];
+      }
     }),
   );
   return groups.flat();
+}
+
+const MAX_EXCEPTION_STACK_LINES = 10;
+
+/**
+ * Why the thread paused, when it is an exception: its type, message and stack from the debug adapter's
+ * `exceptionInfo`, else the description of the "stopped" event.
+ */
+async function exceptionLines({ session, threadId, stop }) {
+  if (stop?.reason !== 'exception') {
+    return [];
+  }
+  try {
+    const info = await session.customRequest('exceptionInfo', { threadId });
+    const details = info.details ?? {};
+    const message = details.message ?? info.description ?? stop.text ?? '';
+    const lines = [`Paused on exception: ${[details.typeName ?? info.exceptionId, singleLine(message)].filter(Boolean).join(': ')}`];
+    const stack = (details.stackTrace ?? '').split(/\r?\n/).filter((line) => line.trim());
+    return [...lines, ...stack.slice(0, MAX_EXCEPTION_STACK_LINES).map((line) => `  ${line.trim()}`)];
+  } catch {
+    return [`Paused on exception: ${singleLine(stop.text ?? stop.description ?? 'no details')}`];
+  }
 }
 
 async function evaluate(session, frameId, expression) {
@@ -88,7 +115,7 @@ async function inspectDebugger(state, { expression, max_variables }, session = v
   }
   const frame = await pausedFrame(state, session);
   if (frame) {
-    lines.push(...stackLines(frame.stackFrames));
+    lines.push(...(await exceptionLines(frame)), ...stackLines(frame.stackFrames));
     if (max_variables > 0 && frame.frameId !== undefined) {
       lines.push(...(await scopeLines(session, frame.frameId, max_variables)));
     }

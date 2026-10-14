@@ -61,7 +61,7 @@ function taskTools(runner) {
     {
       name: 'run_task',
       description:
-        'Start a VS Code task in its own terminal, visible to the user. Output is captured for task_status, except for tasks VS Code must run itself (dependsOn, ${input:...} variables, custom executions). Returns immediately unless a wait_* argument is set.',
+        'Start a VS Code task in its own terminal, visible to the user. Output is captured for task_status, except for tasks VS Code must run itself (dependsOn, ${input:...} variables, custom executions). The terminal closes once the task ends unless keep_open is set or tasks.json sets presentation.close to false. Returns immediately unless a wait_* argument is set.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -72,6 +72,11 @@ function taskTools(runner) {
             type: 'boolean',
             default: true,
             description: 'Capture output. false runs the task exactly as VS Code would, without output.',
+          },
+          keep_open: {
+            type: 'boolean',
+            default: false,
+            description: 'Keep the task terminal open after the task ends, so the user can look at its output.',
           },
           ...waitProperties(false),
           max_lines: maxLinesProperty,
@@ -103,7 +108,7 @@ function taskTools(runner) {
           return runs.length ? runs.map(describeRun).join('\n') : 'No task runs tracked yet.';
         }
         const run = runner.findRun(args.name, args.folder);
-        return waitAndReport(run, args, args.since ?? run.lineCount);
+        return waitAndReport(run, args);
       },
     },
     {
@@ -130,7 +135,7 @@ function taskTools(runner) {
           lines.push(
             runner.closeTerminal(run)
               ? 'Terminal closed.'
-              : `No terminal of this task was found to close. Open terminals: ${openTerminalNames()}.`,
+              : `No open terminal of this task was found; it closes itself when the task ends unless keep_open was set. Open terminals: ${openTerminalNames()}.`,
           );
         }
         return lines.join('\n');

@@ -69,19 +69,22 @@ class CapturedPty {
     run.child = child;
     run.setRunning(child.pid);
 
-    for (const stream of [child.stdout, child.stderr]) {
+    const decoders = [child.stdout, child.stderr].filter(Boolean).map((stream) => {
       const decoder = new StringDecoder('utf8');
-      stream?.on('data', (chunk) => this.output(decoder.write(chunk)));
-    }
+      stream.on('data', (chunk) => this.output(decoder.write(chunk)));
+      return decoder;
+    });
+    // Typing into a finished process must not raise an unhandled EPIPE.
+    child.stdin?.on('error', () => undefined);
     child.on('error', (error) => this.fail(error));
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
+      decoders.forEach((decoder) => this.output(decoder.end()));
       if (run.ended) {
         return;
       }
-      const summary = run.stopRequested ? 'Terminated' : `Exited with code ${code ?? 1}`;
-      this.writeEmitter.fire(`\r\n\x1b[2m${summary}\x1b[0m\r\n`);
-      run.finish(run.stopRequested ? 'terminated' : 'exited', code ?? undefined);
-      this.closeEmitter.fire(code ?? 1);
+      // A process ended by a signal has no exit code; the terminal shows the signal instead.
+      const summary = run.stopRequested ? 'Terminated' : `Exited with ${code === null ? `signal ${signal}` : `code ${code}`}`;
+      this.end(`\r\n\x1b[2m${summary}\x1b[0m\r\n`, run.stopRequested ? 'terminated' : 'exited', code ?? undefined);
     });
   }
 
@@ -98,7 +101,11 @@ class CapturedPty {
       this.close();
       return;
     }
-    this.run.child?.stdin?.write(data.replace(/\r/g, '\n'));
+    const { child } = this.run;
+    if (this.run.ended || !child?.stdin || child.stdin.destroyed || child.stdin.writableEnded) {
+      return;
+    }
+    child.stdin.write(data.replace(/\r/g, '\n'));
     this.writeEmitter.fire(data.replace(/\r/g, '\r\n'));
   }
 
@@ -114,13 +121,49 @@ class CapturedPty {
     if (this.run.ended) {
       return;
     }
-    const message = `Failed to start: ${messageOf(error)}`;
-    this.log.error(`"${this.run.label}": ${message}`);
-    this.writeEmitter.fire(`\x1b[31m${message}\x1b[0m\r\n`);
-    this.run.append(`${message}\n`);
-    this.run.finish('failed');
-    this.closeEmitter.fire(1);
+    const message = messageOf(error);
+    this.log.error(`"${this.run.label}": Failed to start: ${message}`);
+    this.run.fail(message);
+    this.end(`\x1b[31mFailed to start: ${message}\x1b[0m\r\n`, undefined, 1);
   }
+
+  /** Prints the last line, ends the run unless already ended, closes the terminal and frees the emitters. */
+  end(lastLine, state, exitCode) {
+    this.writeEmitter.fire(lastLine);
+    if (state) {
+      this.run.finish(state, exitCode);
+    }
+    this.closeEmitter.fire(exitCode ?? 1);
+    this.writeEmitter.dispose();
+    this.closeEmitter.dispose();
+  }
+}
+
+/** The shell a task without `options.shell.executable` runs in: VS Code's default terminal shell. */
+function defaultShell() {
+  return vscode.env.shell || true;
+}
+
+const shellKind = (shell) => (/pwsh|powershell/i.test(shell) ? 'powershell' : /cmd(\.exe)?$/i.test(shell) ? 'cmd' : 'posix');
+
+/**
+ * Quotes one argument the way VS Code's own task runner does for the shell: single quotes on POSIX
+ * shells and PowerShell, double quotes on cmd. Weak quoting keeps variables expanding where the shell
+ * supports that in double quotes.
+ */
+function quoteArgument(value, quoting, shell) {
+  const kind = shellKind(typeof shell === 'string' ? shell : vscode.env.shell ?? '');
+  const needsQuotes = quoting === vscode.ShellQuoting.Strong || quoting === vscode.ShellQuoting.Weak;
+  if (!needsQuotes && !/[\s"'&|<>^;()$`]/.test(value)) {
+    return value;
+  }
+  if (kind === 'cmd') {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  if (kind === 'powershell') {
+    return quoting === vscode.ShellQuoting.Weak ? `"${value.replace(/["`$]/g, '`$&')}"` : `'${value.replace(/'/g, "''")}'`;
+  }
+  return quoting === vscode.ShellQuoting.Weak ? `"${value.replace(/["\\$`]/g, '\\$&')}"` : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Resolves the predefined variables a spawned process can know; anything else needs VS Code itself. */
@@ -152,14 +195,6 @@ function resolveVariables(value, folder) {
         throw new UnresolvableVariableError(`uses ${match}, which only VS Code can resolve`);
     }
   });
-}
-
-function quoteArgument(value, quoting) {
-  const needsQuotes = quoting === vscode.ShellQuoting.Strong || quoting === vscode.ShellQuoting.Weak;
-  if (!needsQuotes && !/[\s"&|<>^;()]/.test(value)) {
-    return value;
-  }
-  return `"${value.replace(/"/g, '\x5c"')}"`;
 }
 
 /**
@@ -201,6 +236,7 @@ function toSpawnSpec(task, folder) {
     const env = Object.fromEntries(Object.entries(options.env ?? {}).map(([key, value]) => [key, resolve(value)]));
 
     if (execution instanceof vscode.ShellExecution) {
+      const shell = options.executable ? resolve(options.executable) : defaultShell();
       const commandLine =
         execution.commandLine !== undefined
           ? resolve(execution.commandLine)
@@ -208,11 +244,10 @@ function toSpawnSpec(task, folder) {
               .filter((part) => part !== undefined)
               .map((part) =>
                 typeof part === 'string'
-                  ? quoteArgument(resolve(part), undefined)
-                  : quoteArgument(resolve(part.value), part.quoting),
+                  ? quoteArgument(resolve(part), undefined, shell)
+                  : quoteArgument(resolve(part.value), part.quoting, shell),
               )
               .join(' ');
-      const shell = options.executable ? resolve(options.executable) : true;
       return { spec: { commandLine, shell, cwd, env, problemMatchers } };
     }
     if (execution instanceof vscode.ProcessExecution) {

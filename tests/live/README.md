@@ -30,8 +30,14 @@ Nothing touches your own settings, extensions or projects. A window opens on scr
 | Path | Holds |
 |---|---|
 | `live.test.js` | Starts and stops VS Code around the suites |
-| `harness/vscode.js` | Isolated VS Code launch, settings writes, `eventually` for polling |
-| `harness/client.js` | MCP client: `ok`, `fails`, `toolNames`, `instructions` |
+| `windows.test.js` | Several windows of one profile with the packaged extension installed |
+| `harness/vscode.js` | One window with the extension loaded from source |
+| `harness/profile.js` | A temporary profile, the .vsix install, and windows opened into it |
+| `harness/fixture.js` | The temporary folder: fixture copy, settings files, port, cleanup |
+| `harness/processes.js` | Launching VS Code and commands, killing leftovers, free ports |
+| `harness/poll.js` | `eventually` and `sleep` |
+| `harness/client.js` | MCP client: `ok`, `fails`, `toolNames`, `instructions`; answers `roots/list` |
+| `harness/probe.js` | A client run inside a window's terminal, as an agent would be |
 | `suites/*.js` | One suite per tool area |
 | `fixture/` | Two-folder workspace: tasks, launch configurations and a compound in the workspace file, a folder `launch.json`, files to navigate, edit and search |
 
@@ -43,7 +49,19 @@ edit, `live.writeUserSettings` / `live.writeWorkspaceSettings` for settings, and
 VS Code does in the background, such as a language server starting. Suites share one window and run in
 order, so a suite that changes state puts it back in an `after` hook.
 
+## Several windows
+
+`npm run test:live:windows` (`windows.test.js`) packages the extension with `vsce`, installs the .vsix into
+a temporary profile, and opens three windows of that profile in one VS Code instance: the fixture's
+multi-root workspace, a single folder, and a single file. It checks that agents in each window's terminal
+and agents outside VS Code (by MCP roots) reach their own window through one port, and that another window
+takes the port when the serving one closes. Like the other suite, it uses its own free port, so a VS Code
+with this extension already serving port 47391 is not affected.
+
 ## Limits
+
+- A pending VS Code update blocks new instances: VS Code logs `checkInnoSetupMutex: vscode-updating is held`
+  and exits, and the tests time out waiting for the endpoint. Restart VS Code to finish the update first.
 
 - The isolated profile has no test extension, so Test Explorer runs are covered only without tests.
 - A fresh profile asks to trust a publisher before installing from the Marketplace. The network test
