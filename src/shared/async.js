@@ -1,5 +1,7 @@
 'use strict';
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Resolves with `{ done: true, value }` when `promise` settles first, or with `{ done: false }` once
  * `timeoutMs` passes. A rejection of `promise` propagates.
@@ -37,4 +39,4 @@ function anyEvent(...events) {
   };
 }
 
-module.exports = { withTimeout, nextEvent, anyEvent };
+module.exports = { sleep, withTimeout, nextEvent, anyEvent };

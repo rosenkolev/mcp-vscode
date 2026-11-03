@@ -7,6 +7,7 @@ const { eventually } = require('./poll');
 const { cliPath, launch } = require('./processes');
 
 const EXTENSION_ROOT = path.resolve(__dirname, '..', '..', '..');
+const FIXTURE_EXTENSION = path.resolve(__dirname, '..', 'fixture-extension');
 const START_TIMEOUT_MS = 120000;
 const STOP_TIMEOUT_MS = 20000;
 
@@ -32,6 +33,8 @@ class LiveVsCode {
       '--extensions-dir',
       extensionsDir,
       `--extensionDevelopmentPath=${EXTENSION_ROOT}`,
+      // A test controller with known results, for the Test Explorer tools.
+      `--extensionDevelopmentPath=${FIXTURE_EXTENSION}`,
       workspaceFile,
     ]);
     try {

@@ -44,8 +44,7 @@
     "onStartupFinished"
   ],
   "scripts": {
-    "test:live": "node --test --test-concurrency=1 tests/live/live.test.js tests/live/windows.test.js",
-    "test:live:windows": "node --test --test-concurrency=1 tests/live/windows.test.js",
+    "test:live": "node --test --test-concurrency=1 tests/live/live.test.js tests/live/windows.test.js tests/live/engines.test.js",
     "package": "npx --yes @vscode/vsce@3 package",
     "package:list": "npx --yes @vscode/vsce@3 ls"
   },
@@ -130,6 +129,7 @@
               "test_explorer",
               "refresh_tests",
               "run_tests",
+              "test_results",
               "cancel_test_run",
               "clear_test_results",
               "list_output_channels",

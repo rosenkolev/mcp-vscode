@@ -1,0 +1,11 @@
+{
+  "name": "mcp-vscode-fixture-tests",
+  "displayName": "MCP VS Code fixture tests",
+  "description": "Test controller for the live tests of MCP VS Code: three tests that pass, fail and skip.",
+  "publisher": "rosenkolev",
+  "version": "0.0.1",
+  "private": true,
+  "engines": { "vscode": "^1.101.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"]
+}

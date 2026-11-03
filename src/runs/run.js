@@ -91,6 +91,21 @@ class Run {
     this.changed.fire();
   }
 
+  /** Calls `listener` once the run ends, at once when it already has; the returned disposable cancels it. */
+  onEnded(listener) {
+    if (this.ended) {
+      listener();
+      return { dispose: () => undefined };
+    }
+    const subscription = this.changed.event(() => {
+      if (this.ended) {
+        subscription.dispose();
+        listener();
+      }
+    });
+    return subscription;
+  }
+
   /** Records the exit code of a run whose end is reported separately, as for tasks VS Code runs itself. */
   setExitCode(exitCode) {
     this.exitCode = exitCode;

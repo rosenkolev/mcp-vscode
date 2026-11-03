@@ -21,7 +21,7 @@ visible in the window. Works with any [MCP](https://modelcontextprotocol.io) cli
 | Search | Search the workspace like the Search view |
 | Problems and Output | Read errors, warnings and the Output panel of extensions |
 | Editors | Open, list and close tabs; read the cursor and selection |
-| Tests | Discover and run tests in the Test Explorer |
+| Tests | Run all tests, one file or one test, with or without coverage, and read which failed and where (Jest, Vitest, Node.js, pytest, ...) |
 | Commands and extensions | Run any Command Palette command; list, install and uninstall extensions |
 
 Every feature and its options: [tool reference](TOOLS.md).
@@ -69,7 +69,7 @@ Commands (Command Palette, under **MCP VS Code**): **Copy Claude Code Setup Comm
 - Terminal output needs a shell with VS Code shell integration (PowerShell, bash, zsh, fish), not cmd.exe.
 - Language tools are only as good as the installed language extension.
 - Remote windows (SSH, WSL, containers) are not supported.
-- Test results and notifications cannot be read through the VS Code API.
+- Test failure messages, coverage numbers and notifications are not readable.
 
 ## More
 

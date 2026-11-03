@@ -2,7 +2,10 @@
 
 const cp = require('child_process');
 const fs = require('fs/promises');
+const { createWriteStream } = require('fs');
+const https = require('https');
 const net = require('net');
+const os = require('os');
 const path = require('path');
 
 const IS_WINDOWS = process.platform === 'win32';
@@ -40,21 +43,97 @@ async function onPath(name, notFound = `${name} not found on PATH.`) {
   throw new Error(notFound);
 }
 
-/**
- * Full path of the VS Code command line: $VSCODE_CLI, else `code` found on PATH. The full path matters on
- * Windows, where code.cmd finds VS Code relative to its own folder and fails when started by bare name.
- */
-async function cliPath() {
-  return process.env.VSCODE_CLI ?? onPath('code', 'VS Code command line not found: put `code` on PATH or set VSCODE_CLI.');
+/** Download of the latest stable VS Code per platform, and where its command line is inside it. */
+const STABLE_BUILDS = {
+  win32: { build: 'win32-x64-archive', file: 'vscode.zip', cli: ['bin', 'code.cmd'] },
+  linux: { build: 'linux-x64', file: 'vscode.tar.gz', cli: ['VSCode-linux-x64', 'bin', 'code'] },
+  darwin: { build: 'darwin-universal', file: 'vscode.zip', cli: ['Visual Studio Code.app', 'Contents', 'Resources', 'app', 'bin', 'code'] },
+};
+
+/** Downloads `url` to `file`, following redirects. */
+function download(url, file) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          download(new URL(res.headers.location, url).href, file).then(resolve, reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`Download of ${url} failed: HTTP ${res.statusCode}`));
+          return;
+        }
+        const out = createWriteStream(file);
+        res.pipe(out);
+        out.on('finish', () => out.close(resolve));
+        out.on('error', reject);
+        // A dropped connection fails the response, which pipe() does not pass on to the file.
+        res.on('error', reject);
+        res.on('aborted', () => reject(new Error(`Download of ${url} was cut off.`)));
+      })
+      .on('error', reject);
+  });
 }
 
 /**
- * The environment without what a VS Code process passes to its children. Run from a VS Code terminal or
- * from an agent inside VS Code, `ELECTRON_RUN_AS_NODE` and the `VSCODE_*` variables of the extension host
- * would make the new VS Code run as a plain Node process instead of opening a window.
+ * The command line of the latest stable VS Code, downloaded once into a cache in the temp folder. The
+ * archive edition has no installer, so a pending update of the installed VS Code cannot block it. It is
+ * unpacked into a side folder and moved into place only when complete, so an interrupted run leaves no
+ * half-unpacked copy behind for the next run.
+ */
+async function stableCliPath() {
+  const target = STABLE_BUILDS[process.platform];
+  if (!target) {
+    throw new Error(`LIVE_TESTS_VSCODE=stable has no VS Code download for ${process.platform}.`);
+  }
+  const dir = path.join(os.tmpdir(), 'mcp-vscode-test-vscode', process.platform);
+  const cli = path.join(dir, ...target.cli);
+  if (await fs.stat(cli).then(() => true, () => false)) {
+    return cli;
+  }
+  const unpacking = `${dir}.unpacking`;
+  await fs.rm(unpacking, { recursive: true, force: true });
+  await fs.mkdir(unpacking, { recursive: true });
+  const archive = path.join(unpacking, target.file);
+  console.log(`Downloading VS Code (${target.build}) for the live tests...`);
+  await download(`https://update.code.visualstudio.com/latest/${target.build}/stable`, archive);
+  // tar unpacks zip files too on Windows 10 and later.
+  await runToEnd('tar', process.platform === 'linux' ? ['-xzf', archive, '-C', unpacking] : ['-xf', archive, '-C', unpacking]);
+  await fs.rm(archive, { force: true });
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.rename(unpacking, dir);
+  return cli;
+}
+
+let stableCli;
+
+/**
+ * Full path of the VS Code command line: $VSCODE_CLI; a downloaded stable VS Code with
+ * LIVE_TESTS_VSCODE=stable; else `code` found on PATH. The full path matters on Windows, where code.cmd
+ * finds VS Code relative to its own folder and fails when started by bare name.
+ */
+async function cliPath() {
+  if (process.env.VSCODE_CLI) {
+    return process.env.VSCODE_CLI;
+  }
+  if (process.env.LIVE_TESTS_VSCODE === 'stable') {
+    stableCli ??= stableCliPath();
+    return stableCli;
+  }
+  return onPath('code', 'VS Code command line not found: put `code` on PATH, set VSCODE_CLI, or set LIVE_TESTS_VSCODE=stable.');
+}
+
+/**
+ * The environment without what the test's own parents set for their children:
+ * - `ELECTRON_RUN_AS_NODE` and `VSCODE_*`, from a VS Code terminal or an agent inside VS Code, would make
+ *   the new VS Code run as a plain Node process instead of opening a window;
+ * - `NODE_TEST_CONTEXT`, from `node --test`, would make test runs inside the window (the Node.js test
+ *   extension's `node --test`) report to this test run instead of to their extension.
  */
 function cleanEnvironment() {
-  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(ELECTRON_RUN_AS_NODE|VSCODE_)/i.test(name)));
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(ELECTRON_RUN_AS_NODE|VSCODE_|NODE_TEST_CONTEXT$)/i.test(name)));
 }
 
 /** Quotes one argument for cmd.exe, which runs .cmd scripts: special characters are escaped, the rest double-quoted. */

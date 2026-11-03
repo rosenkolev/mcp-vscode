@@ -12,6 +12,10 @@ const WORKSPACE_FILE = 'test.code-workspace';
 const BASE_USER_SETTINGS = {
   'security.workspace.trust.enabled': false,
   'workbench.startupEditor': 'none',
+  'workbench.welcomePage.experimentalOnboarding': false,
+  'workbench.welcomePage.walkthroughs.openOnInstall': false,
+  'workbench.tips.enabled': false,
+  'update.showReleaseNotes': false,
   'extensions.autoUpdate': false,
   'extensions.autoCheckUpdates': false,
   'update.mode': 'none',
@@ -24,17 +28,19 @@ const BASE_USER_SETTINGS = {
  * settings, an empty extensions folder, and a free port for the MCP endpoint.
  */
 class TestFixture {
-  async create(prefix) {
+  /** @param {string} prefix of the temporary folder's name @param {string} [source] folder to copy as the workspace */
+  async create(prefix, source = FIXTURE_DIR) {
     // The long path: a Windows 8.3 short path (C:\Users\ABCDEF~1) differs from the paths VS Code reports
     // and keeps debugger breakpoints from binding.
     this.root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
     this.workspaceDir = path.join(this.root, 'workspace');
     this.userDataDir = path.join(this.root, 'user-data');
     this.extensionsDir = path.join(this.root, 'extensions');
-    await fs.cp(FIXTURE_DIR, this.workspaceDir, { recursive: true });
+    await fs.cp(source, this.workspaceDir, { recursive: true });
     await fs.mkdir(this.extensionsDir, { recursive: true });
     this.port = await freePort();
-    this.originalWorkspaceSettings = JSON.parse(await fs.readFile(this.workspaceFile, 'utf8')).settings ?? {};
+    const workspace = await fs.readFile(this.workspaceFile, 'utf8').then(JSON.parse, () => undefined);
+    this.originalWorkspaceSettings = workspace?.settings ?? {};
     await this.writeUserSettings({});
   }
 

@@ -2,6 +2,7 @@
 
 const vscode = require('vscode');
 const { Run } = require('../runs/run');
+const { DEFAULT_CLOSE_DELAY_SECONDS } = require('../runs/closing');
 const { nextEvent } = require('../shared/async');
 const { messageOf, killTree, toSpawnSpec, toCapturedTask } = require('./process');
 
@@ -94,6 +95,8 @@ class TaskRunner {
     this.runs = new Map();
     /** Task terminal per task key; VS Code reuses it for later runs of the same task. @type {Map<string, vscode.Terminal>} */
     this.terminals = new Map();
+    /** Timers of task terminals that close a while after their task ended. @type {Set<NodeJS.Timeout>} */
+    this.closeTimers = new Set();
     this.disposables = [
       vscode.window.onDidOpenTerminal((terminal) => this.adoptTerminal(terminal)),
       vscode.window.onDidCloseTerminal((terminal) => {
@@ -212,13 +215,13 @@ class TaskRunner {
     return [...this.runs.values()].sort((a, b) => b.startedAt - a.startedAt);
   }
 
-  async run(name, { folder, restart, capture, keep_open }) {
+  async run(name, { folder, restart, capture, keep_open, close_delay_seconds = DEFAULT_CLOSE_DELAY_SECONDS }) {
     const task = await this.findTask(name, folder);
-    // An explicit presentation.close of tasks.json wins over the default.
-    task.presentationOptions = {
-      ...task.presentationOptions,
-      close: keep_open ? false : (task.presentationOptions.close ?? true),
-    };
+    // An explicit presentation.close of tasks.json wins. Otherwise VS Code keeps the terminal, and it is
+    // closed here after the delay, which VS Code's own close option cannot do.
+    const configuredClose = task.presentationOptions.close;
+    const closeAfterDelay = !keep_open && configuredClose === undefined;
+    task.presentationOptions = { ...task.presentationOptions, close: !keep_open && configuredClose === true };
     const previous = this.runs.get(keyOf(task));
     if (previous && !previous.ended) {
       if (!restart) {
@@ -246,7 +249,27 @@ class TaskRunner {
       run.fail(messageOf(error));
       throw error;
     }
+    if (closeAfterDelay) {
+      this.closeWhenEnded(run, close_delay_seconds * 1000);
+    }
     return run;
+  }
+
+  /**
+   * Closes the terminal of `run` `delayMs` after it ends, so the user can read it first. VS Code reuses a
+   * task's terminal for its next run, so the terminal stays when a newer run of the task started meanwhile.
+   * Only the terminal adopted for the task is closed, never one that merely has its name.
+   */
+  closeWhenEnded(run, delayMs) {
+    run.onEnded(() => {
+      const timer = setTimeout(() => {
+        this.closeTimers.delete(timer);
+        if (this.runs.get(run.key) === run) {
+          this.terminals.get(run.key)?.dispose();
+        }
+      }, delayMs);
+      this.closeTimers.add(timer);
+    });
   }
 
   async stop(run) {
@@ -285,6 +308,7 @@ class TaskRunner {
   }
 
   dispose() {
+    this.closeTimers.forEach((timer) => clearTimeout(timer));
     for (const run of this.runs.values()) {
       if (!run.ended && run.child) {
         killTree(run.child);

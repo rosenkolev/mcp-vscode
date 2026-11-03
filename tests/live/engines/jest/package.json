@@ -1,0 +1,7 @@
+{
+  "name": "engine-jest",
+  "private": true,
+  "scripts": { "test": "jest" },
+  "jest": { "testEnvironment": "node" },
+  "devDependencies": { "jest": "29.7.0" }
+}

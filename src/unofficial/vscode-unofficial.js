@@ -3,8 +3,10 @@
 /*
  * vscode-unofficial: what the `vscode` API does not offer, shaped like it (`vscodeUnofficial.outputChannels.list()`
  * next to `vscode.window.createOutputChannel()`) and built on VS Code internals that are not a public contract.
- * Each capability verifies its internal before first use, by writing a marker and reading it back, and fails
- * with NOT_SUPPORTED instead of guessing when the internal has changed. Call `initialize` once on activation.
+ * Each capability verifies its internal before trusting it and fails with NOT_SUPPORTED instead of guessing
+ * when the internal has changed. Call `initialize` once on activation.
+ *
+ * testResults: see test-results.js.
  *
  * outputChannels: VS Code mirrors every extension Output channel to a file under the window's log folder:
  *   log channels   (createOutputChannel(name, { log: true }))  <window>/exthost/<extension id>/<name>.log
@@ -15,6 +17,8 @@ const vscode = require('vscode');
 const fs = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { TestResultsReader } = require('./test-results');
+const { sleep } = require('../shared/async');
 
 const NOT_SUPPORTED = 'API is no longer supported: this VS Code version stores Output channels differently.';
 const NOT_INITIALIZED = 'vscode-unofficial is not initialized; call initialize() on activation.';
@@ -30,7 +34,6 @@ let host;
 /** Pending or passed layout verification; reset after a failure so the next call checks again. */
 let verified;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const readText = (file) => fs.readFile(file, 'utf8').catch(() => undefined);
 const listDir = (dir) => fs.readdir(dir, { withFileTypes: true }).catch(() => []);
 const exthostDir = () => path.dirname(host.logUri.fsPath);
@@ -125,13 +128,17 @@ const outputChannels = {
   },
 };
 
+/** Results of finished Test Explorer runs, found next to the extension's workspace storage folder. */
+const testResults = new TestResultsReader(() => host?.storageUri?.fsPath);
+
 /**
- * @param {{ logUri: vscode.Uri, log: vscode.LogOutputChannel }} options the extension context's `logUri`
- * and the extension's log channel, used to locate and verify the log layout
+ * @param {{ logUri: vscode.Uri, storageUri?: vscode.Uri, log: vscode.LogOutputChannel }} options the
+ * extension context's `logUri` and `storageUri`, and the extension's log channel, used to locate and
+ * verify the internals
  */
 function initialize(options) {
   host = options;
   verified = undefined;
 }
 
-module.exports = { initialize, outputChannels };
+module.exports = { initialize, outputChannels, testResults };

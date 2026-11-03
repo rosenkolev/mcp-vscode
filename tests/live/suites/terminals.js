@@ -40,7 +40,9 @@ module.exports = (live) =>
     });
 
     it('closes the terminal once the command ends, keeping its output readable', async () => {
-      await live.client.ok('run_in_terminal', { command: `node -e "console.log('closing')"`, terminal: 'T3' });
+      await live.client.ok('run_in_terminal', { command: `node -e "console.log('closing')"`, terminal: 'T3', close_delay_seconds: 3 });
+      // It stays open for the delay, so the user can see the result, then closes.
+      assert.match(await live.client.ok('read_terminal'), /"T3" \([^)]*\) - closing/);
       await eventually(async () => !/"T3"/.test(await live.client.ok('read_terminal')), CLOSE_TIMEOUT_MS, 'terminal T3 to close');
       assert.match(await live.client.ok('read_terminal', { terminal: 'T3' }), /closing/);
       // The name is free again at once, even while VS Code is still closing the old terminal.

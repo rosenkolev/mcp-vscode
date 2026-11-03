@@ -22,11 +22,14 @@ module.exports = (live) =>
     it('runs a task and captures its output, then closes its terminal', async () => {
       const text = await live.client.ok('run_task', { name: 'hello', wait_for_exit: true, timeout_seconds: 60 });
       assert.match(text, /hello: exited \(exit code 0\)[\s\S]*hello task/);
+      // It stays open for the default delay, so the user can see the result, then closes.
+      assert.match(await live.client.ok('read_terminal'), /"[^"]*hello[^"]*"/);
       await eventually(
-        async () => /No open terminal of this task/.test(await live.client.ok('close_task', { name: 'hello' })),
+        async () => !/"[^"]*hello[^"]*"/.test(await live.client.ok('read_terminal')),
         TERMINAL_CLOSE_TIMEOUT_MS,
         'the terminal of hello to close',
       );
+      assert.match(await live.client.ok('close_task', { name: 'hello' }), /No open terminal of this task/);
     });
 
     it('passes input typed into the task terminal to the task', async () => {

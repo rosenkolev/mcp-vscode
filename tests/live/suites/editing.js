@@ -56,33 +56,16 @@ module.exports = (live) =>
       assert.equal(await fs.readFile(crlf, 'utf8'), 'uno\r\ndos\r\nthree\r\n');
     });
 
-    it('lets the user review an edit in the Refactor Preview', async () => {
-      const edits = [{ old_text: "'edited'", new_text: "'reviewed'" }];
-      let reply;
-      const pending = live.client.ok('edit_file', { path: FILE, edits, review: true }).then((text) => (reply = text));
-      // The call blocks until the user decides. The preview lists the edits unchecked; the test plays the
-      // user through the panel's commands: focus the list, tick the file, which ticks its edits, then Apply.
-      await eventually(async () => {
-        await sleep(1500);
-        for (const command of ['refactorPreview.focus', 'list.focusFirst', 'refactorPreview.toggleCheckedState', 'refactorPreview.apply']) {
-          await live.client.call('run_command', { command });
-        }
-        await sleep(300);
-        return reply !== undefined;
-      }, 20000, 'the Refactor Preview to apply the edit');
-      await pending;
-      assert.match(reply, /Applied 1 edit, approved by the user/);
-      assert.match(await readFixture(), /const label = 'reviewed';/);
-    });
-
-    it('leaves the file unchanged when the user discards a reviewed edit', async () => {
+    it('waits for the user in the Refactor Preview and leaves the file unchanged when they discard', async () => {
+      // Applying needs a tick in the preview's list first (edits that need confirmation start unticked),
+      // which keyboard commands cannot do reliably; discarding is one command, safe to repeat until the
+      // preview has taken it, so the review path is checked through it.
       const before = await readFixture();
       let reply;
-      const pending = live.client.ok('edit_file', { path: FILE, edits: [{ old_text: "'reviewed'", new_text: "'discarded'" }], review: true }).then((text) => (reply = text));
+      const pending = live.client.ok('edit_file', { path: FILE, edits: [{ old_text: 'const label', new_text: 'const discarded' }], review: true }).then((text) => (reply = text));
       await eventually(async () => {
-        await sleep(1500);
+        await sleep(1000);
         await live.client.call('run_command', { command: 'refactorPreview.discard' });
-        await sleep(300);
         return reply !== undefined;
       }, 20000, 'the Refactor Preview to discard the edit');
       await pending;

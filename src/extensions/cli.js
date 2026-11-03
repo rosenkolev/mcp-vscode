@@ -33,19 +33,39 @@ async function windowScope(globalStorageUri) {
 }
 
 /**
- * Folder of the installed extensions: the parent of this extension's own folder once installed, else of
- * any other loaded non-built-in extension. Run from source (development mode), this extension lives elsewhere.
+ * True when `extension` was installed into its folder: that folder's registry (extensions.json) lists it
+ * with install metadata. An extension loaded from source has no such entry, even where the VS Code CLI,
+ * pointed at its folder, wrote a registry by scanning it.
+ */
+async function isInstalledIn(dir, extension) {
+  const entries = await fs
+    .readFile(path.join(dir, 'extensions.json'), 'utf8')
+    .then(JSON.parse)
+    .catch(() => undefined);
+  const id = extension.id.toLowerCase();
+  return Array.isArray(entries) && entries.some((entry) => entry?.identifier?.id?.toLowerCase() === id && entry.metadata != null);
+}
+
+/**
+ * Folder of the installed extensions: the parent of this extension's own folder once installed. Run from
+ * source (development mode), this extension lives elsewhere, and so may other extensions, so it is the
+ * folder of another loaded extension that VS Code's registry lists as installed there.
  * @param {vscode.ExtensionContext} context
  */
-function extensionsDir(context) {
-  const installed =
-    context.extensionMode === vscode.ExtensionMode.Production
-      ? context.extension
-      : vscode.extensions.all.find(
-          (extension) =>
-            !extension.packageJSON.isBuiltin && extension.id !== context.extension.id && extension.extensionUri.scheme === 'file',
-        );
-  return installed && path.dirname(installed.extensionUri.fsPath);
+async function extensionsDir(context) {
+  if (context.extensionMode === vscode.ExtensionMode.Production) {
+    return path.dirname(context.extension.extensionUri.fsPath);
+  }
+  const candidates = vscode.extensions.all.filter(
+    (extension) => !extension.packageJSON.isBuiltin && extension.id !== context.extension.id && extension.extensionUri.scheme === 'file',
+  );
+  for (const extension of candidates) {
+    const dir = path.dirname(extension.extensionUri.fsPath);
+    if (await isInstalledIn(dir, extension)) {
+      return dir;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -54,7 +74,7 @@ function extensionsDir(context) {
  */
 async function scopeArgs(context) {
   const { userDataDir, profile } = await windowScope(context.globalStorageUri);
-  const extensions = extensionsDir(context);
+  const extensions = await extensionsDir(context);
   if (!extensions) {
     throw new Error('the extensions folder is unknown while this extension runs from source and no installed extension is loaded');
   }

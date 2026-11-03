@@ -42,8 +42,8 @@ const INSTRUCTIONS =
   'list_output_channels and read_output_channel read the Output panel. ' +
   'list_extensions, install_extension and uninstall_extension manage VS Code extensions. ' +
   'get_workspace describes the open folders; list_tabs, open_file and close_tab handle editor tabs. ' +
-  'test_explorer, refresh_tests, run_tests, cancel_test_run and clear_test_results drive the Test Explorer, ' +
-  'whose results are not readable: for test output, run the test command with run_in_terminal.';
+  'test_explorer, refresh_tests, run_tests, test_results, cancel_test_run and clear_test_results drive the Test Explorer; ' +
+  'run_tests and test_results report which tests failed and where, but not why: for failure messages, run the test command with run_in_terminal.';
 
 /** @param {vscode.ExtensionContext} context */
 function createTools(context, runner, terminals) {
@@ -67,7 +67,7 @@ function createTools(context, runner, terminals) {
 /** @param {vscode.ExtensionContext} context */
 function activate(context) {
   const log = vscode.window.createOutputChannel('MCP VS Code', { log: true });
-  vscodeUnofficial.initialize({ logUri: context.logUri, log });
+  vscodeUnofficial.initialize({ logUri: context.logUri, storageUri: context.storageUri, log });
   const runner = new TaskRunner(log);
   const terminals = new TerminalManager();
   const registry = new WindowRegistry(log);

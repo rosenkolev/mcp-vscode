@@ -5,7 +5,7 @@
  * of it open in one VS Code instance: a multi-root workspace, a single folder and a single file. Checks
  * that every agent works in its own window through the one main port, whether it runs inside a window
  * (placed by its process) or outside VS Code (placed by its MCP roots), and that another window takes
- * over the port when the serving window closes. Run with `npm run test:live:windows`.
+ * over the port when the serving window closes. Run alone with `node --test tests/live/windows.test.js`.
  */
 
 const assert = require('node:assert/strict');

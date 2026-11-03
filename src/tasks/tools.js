@@ -4,6 +4,7 @@ const { maxLinesProperty, filterProperty } = require('../shared/schema');
 const { limitLines } = require('../shared/text');
 const { sinceProperty, waitProperties, describeRun, waitAndReport } = require('../runs/report');
 const { openTerminalNames } = require('../terminals/manager');
+const { closingProperties } = require('../runs/closing');
 
 const MAX_LISTED_TASKS = 300;
 
@@ -61,7 +62,7 @@ function taskTools(runner) {
     {
       name: 'run_task',
       description:
-        'Start a VS Code task in its own terminal, visible to the user. Output is captured for task_status, except for tasks VS Code must run itself (dependsOn, ${input:...} variables, custom executions). The terminal closes once the task ends unless keep_open is set or tasks.json sets presentation.close to false. Returns immediately unless a wait_* argument is set.',
+        'Start a VS Code task in its own terminal, visible to the user. Output is captured for task_status, except for tasks VS Code must run itself (dependsOn, ${input:...} variables, custom executions). The terminal closes close_delay_seconds (default 3) after the task ends, unless keep_open is set or tasks.json sets presentation.close. Returns immediately unless a wait_* argument is set.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -73,11 +74,7 @@ function taskTools(runner) {
             default: true,
             description: 'Capture output. false runs the task exactly as VS Code would, without output.',
           },
-          keep_open: {
-            type: 'boolean',
-            default: false,
-            description: 'Keep the task terminal open after the task ends, so the user can look at its output.',
-          },
+          ...closingProperties('task'),
           ...waitProperties(false),
           max_lines: maxLinesProperty,
         },
@@ -135,7 +132,7 @@ function taskTools(runner) {
           lines.push(
             runner.closeTerminal(run)
               ? 'Terminal closed.'
-              : `No open terminal of this task was found; it closes itself when the task ends unless keep_open was set. Open terminals: ${openTerminalNames()}.`,
+              : `No open terminal of this task was found; it closes itself shortly after the task ends unless keep_open was set. Open terminals: ${openTerminalNames()}.`,
           );
         }
         return lines.join('\n');

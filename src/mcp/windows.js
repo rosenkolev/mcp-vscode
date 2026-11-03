@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { ancestorsOf, ownerOfConnection } = require('./processes');
 const { registryDirectory, rootPath, windowsOfRoot } = require('./folders');
+const { sleep } = require('../shared/async');
 
 /** Ancestors of a client process are cached this long; an agent keeps its pid for its whole session. */
 const ANCESTOR_CACHE_MS = 10 * 60 * 1000;
@@ -30,7 +31,6 @@ function windowName() {
 
 const describe = (entry) => `"${entry.name}"`;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** True when `stat` belongs to this user; always true where files have no owner uid (Windows). */
 function ownedByUser(stat) {

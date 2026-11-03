@@ -15,19 +15,23 @@ Use a port other than 47391 (`mcpVscode.port`) if you also have the installed ex
 
 ## Tests
 
-The tests drive real VS Code windows over MCP, the way an agent does.
+The tests drive real VS Code windows over MCP, the way an agent does. `npm run test:live` runs them all;
+one suite alone: `node --test tests/live/<suite>.test.js`.
 
-| Command | Runs |
+| Suite | Checks |
 |---|---|
-| `npm run test:live` | Everything below |
-| `npm run test:live:windows` | Only the several-windows suite |
-| `LIVE_TESTS_NETWORK=1 npm run test:live` | Also installs an extension from the Marketplace |
+| `live.test.js` | Every tool, in one window with the extension loaded from source |
+| `windows.test.js` | Three windows of one profile with the packaged extension installed |
+| `engines.test.js` | Test results with real test extensions: Jest, Vitest, Node.js test runner, pytest |
 
-- One suite opens a window with the extension loaded from source and calls every tool.
-- The other packages the extension, installs it into a temporary profile, and opens three windows of it.
+| Variable | Effect |
+|---|---|
+| `LIVE_TESTS_NETWORK=1` | Also run what needs the network: a Marketplace install, and the engines suite (npm, pip) |
+| `LIVE_TESTS_VSCODE=stable` | Use a downloaded VS Code instead of yours, e.g. when a pending VS Code update blocks new windows |
 
-Both use temporary folders and their own port, so they do not touch your settings or a running copy of the
-extension. Needs VS Code's `code` command on PATH and Node.js 20+. More in
+The suites use temporary folders and their own port, so they do not touch your settings or a running copy
+of the extension. Needs Node.js 20+, VS Code's `code` command on PATH (or `LIVE_TESTS_VSCODE=stable`), and for the
+engines Python 3 (`py` on Windows, `python3` elsewhere). More in
 [tests/live/README.md](tests/live/README.md).
 
 ## Code

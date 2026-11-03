@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Test results: `run_tests` waits and returns which tests passed, failed or were skipped, with file, line
+  and duration; it runs all tests, one file (`file`), one test (`test`, at a line), or tests of a file by
+  name (`tests`), with or without coverage. `test_results` reads the latest run, also one the user
+  started; `test_explorer` lists the tests discovered in a file. Works with any test extension; the live
+  tests cover Jest, Vitest, the Node.js test runner and pytest, and Playwright Test, unittest, JUnit,
+  xUnit (C# Dev Kit), minitest (Ruby LSP), Deno and munit (Metals) were checked by hand on Windows and Linux.
+
+### Changed
+
+- Terminals of `run_in_terminal` and `run_task` close 3 seconds after the command or task ends
+  (`close_delay_seconds`), so the user can see the result.
+- `run_tests` scope `current_file` is now `file`, which takes the file as `path`.
+
+### Fixed
+
+- `list_extensions` no longer takes the folder of an extension run from source for the extensions folder.
+
 ## 1.1.0
 
 ### Added

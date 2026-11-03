@@ -3,6 +3,7 @@
 const vscode = require('vscode');
 const { pathProperty, maxLinesProperty, filterProperty } = require('../shared/schema');
 const { sinceProperty, waitProperties, describeRun, waitAndReport } = require('../runs/report');
+const { closingProperties } = require('../runs/closing');
 
 const DEFAULT_TERMINAL_NAME = 'MCP';
 
@@ -27,11 +28,11 @@ function exitCodeNotes(run) {
     : [];
 }
 
-function describeTerminal({ terminal, latest }) {
+function describeTerminal({ terminal, latest, closing }) {
   const shell = terminal.shellIntegration
     ? `cwd ${terminal.shellIntegration.cwd?.fsPath ?? 'unknown'}`
     : 'no shell integration';
-  return `"${terminal.name}" (${shell})${latest ? ` - last: ${describeRun(latest)}` : ''}`;
+  return `"${terminal.name}" (${shell})${closing ? ' - closing' : ''}${latest ? ` - last: ${describeRun(latest)}` : ''}`;
 }
 
 /** @param {import('./manager').TerminalManager} terminals */
@@ -40,7 +41,7 @@ function terminalTools(terminals) {
     {
       name: 'run_in_terminal',
       description:
-        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. The terminal closes once the command ends unless keep_open is set; its output stays readable with read_terminal. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent and the terminal stays open.',
+        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. The terminal closes close_delay_seconds (default 3) after the command ends, unless keep_open is set; its output stays readable with read_terminal. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent and the terminal stays open.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -50,11 +51,7 @@ function terminalTools(terminals) {
             description: `Directory to run in. ${pathProperty.description} Default: the current directory of the terminal.`,
           },
           terminal: namedTerminalProperty,
-          keep_open: {
-            type: 'boolean',
-            default: false,
-            description: 'Keep the terminal open after the command ends, so the user can look at its output.',
-          },
+          ...closingProperties('command'),
           ...waitProperties(true),
           max_lines: maxLinesProperty,
         },

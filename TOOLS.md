@@ -18,7 +18,7 @@
 | Tool | Does |
 |---|---|
 | `list_tasks` | Tasks VS Code can run, with the state of each run |
-| `run_task` | Start a task; `restart` stops a running one first. Its terminal closes when the task ends unless `keep_open` |
+| `run_task` | Start a task; `restart` stops a running one first. Its terminal closes `close_delay_seconds` (default 3) after the task ends, unless `keep_open` |
 | `task_status` | State, exit code and output of a run; without `name`, every run |
 | `close_task` | Stop a task with all its processes and close its terminal |
 
@@ -26,7 +26,7 @@
 
 | Tool | Does |
 |---|---|
-| `run_in_terminal` | Run a command in a named terminal (default `MCP`) and `cwd`; returns exit code and output. The terminal closes when the command ends unless `keep_open` |
+| `run_in_terminal` | Run a command in a named terminal (default `MCP`) and `cwd`; returns exit code and output. The terminal closes `close_delay_seconds` (default 3) after the command ends, unless `keep_open` |
 | `read_terminal` | Output of a terminal's latest or a matching command, also after the terminal closed; without `terminal`, every terminal |
 | `send_to_terminal` | Type `text` (with Enter unless `enter: false`) or press Ctrl+C (`interrupt`), also in task terminals |
 | `clear_terminal` / `close_terminal` | Clear a terminal; close one, ending what runs in it |
@@ -84,11 +84,17 @@
 
 | Tool | Does |
 |---|---|
-| `test_explorer` | Test controllers and their tests, or the tests of one `file` |
-| `refresh_tests` / `run_tests` | Find tests again; run `all`, `failed`, `last` or `current_file` and wait |
+| `test_explorer` | Test controllers, or the tests discovered in one `file` with their line and last result |
+| `refresh_tests` | Find tests again |
+| `run_tests` | Run `all`, `failed`, `last`, one `file` (`path`), one `test` (`path` and a `line` inside it) or `tests` of a file by `names`, with `coverage: true` if wanted; waits and returns the result |
+| `test_results` | The latest run, also one you started: counts, and the failed tests (or `show: "all"`) with file, line and duration |
 | `cancel_test_run` / `clear_test_results` | Cancel the run; clear results |
 
-Test results cannot be read; for test output, run the test command with `run_in_terminal`.
+Results come from the Test Explorer, so they work with any test extension that lists its tests there; the
+live tests cover Jest, Vitest, the Node.js test runner and pytest. VS Code does not keep failure messages
+or coverage numbers: for those, run the test command with `run_in_terminal`. Results are read from VS
+Code's internal storage, which is checked before use; if a VS Code update changes it, the tools say so
+instead of reporting wrong results.
 
 ### Commands and extensions
 

@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const fs = require('fs/promises');
 const path = require('path');
 const { Run } = require('../runs/run');
+const { DEFAULT_CLOSE_DELAY_SECONDS } = require('../runs/closing');
 const { nextEvent } = require('../shared/async');
 const { resolveWorkspacePath } = require('../workspace/paths');
 
@@ -56,8 +57,10 @@ class TerminalManager {
     this.pending = new Map();
     /** Exit-code receivers of running executions. @type {Map<vscode.TerminalShellExecution, (exitCode?: number) => void>} */
     this.exits = new Map();
-    /** Terminals closed here, by close_terminal or once their command ended. @type {Set<vscode.Terminal>} */
+    /** Terminals closed here, until VS Code reports the close. @type {Set<vscode.Terminal>} */
     this.closedHere = new Set();
+    /** Timers of terminals that close a while after their command ended. @type {Map<vscode.Terminal, NodeJS.Timeout>} */
+    this.closing = new Map();
     /** Captured commands of terminals closed here, per name, still readable with read_terminal. @type {Map<string, TerminalRun[]>} */
     this.closedHistory = new Map();
     /** Command being started per terminal name, until it is captured. @type {Map<string, string>} */
@@ -106,6 +109,8 @@ class TerminalManager {
   }
 
   forget(terminal) {
+    clearTimeout(this.closing.get(terminal));
+    this.closing.delete(terminal);
     const runs = this.history.get(terminal) ?? [];
     this.history.delete(terminal);
     this.reserved.delete(terminal.name);
@@ -129,25 +134,33 @@ class TerminalManager {
     runs.forEach((run) => run.dispose());
   }
 
-  /** Closes the terminal once `run` ends; its commands stay readable by terminal name. */
-  closeWhenEnded(run) {
-    const close = () => {
-      if (!vscode.window.terminals.includes(run.terminal)) {
+  /**
+   * Closes the terminal `delayMs` after `run` ends, so the user can read it first; its commands stay
+   * readable by terminal name. While it waits, a new run_in_terminal with the same name gets a new
+   * terminal, and a command the user types into it keeps it open.
+   */
+  closeWhenEnded(run, delayMs) {
+    run.onEnded(() => {
+      const { terminal } = run;
+      if (!vscode.window.terminals.includes(terminal)) {
         return;
       }
-      this.closedHere.add(run.terminal);
-      run.terminal.dispose();
-    };
-    if (run.ended) {
-      close();
-      return;
-    }
-    const subscription = run.changed.event(() => {
-      if (run.ended) {
-        subscription.dispose();
-        close();
-      }
+      const timer = setTimeout(() => {
+        this.closing.delete(terminal);
+        if (this.latest(terminal) === run) {
+          this.closeNow(terminal);
+        }
+      }, delayMs);
+      this.closing.set(terminal, timer);
     });
+  }
+
+  /** Disposes a terminal; its commands stay readable by its name. */
+  closeNow(terminal) {
+    clearTimeout(this.closing.get(terminal));
+    this.closing.delete(terminal);
+    this.closedHere.add(terminal);
+    terminal.dispose();
   }
 
   latest(terminal) {
@@ -162,17 +175,17 @@ class TerminalManager {
 
   /**
    * Runs `command` in the terminal named `name`, created in `cwd` when missing; an existing terminal
-   * changes to `cwd` first. The terminal closes once the command ends, unless `keep_open`. Returns the
-   * run, or the reason the command was sent without capture.
+   * changes to `cwd` first. The terminal closes `close_delay_seconds` after the command ends, unless
+   * `keep_open`. Returns the run, or the reason the command was sent without capture.
    * @returns {Promise<{ run?: TerminalRun, reason?: string }>}
    */
-  async run({ command, cwd, terminal: name, keep_open }) {
+  async run({ command, cwd, terminal: name, keep_open, close_delay_seconds = DEFAULT_CLOSE_DELAY_SECONDS }) {
     const directory = cwd && resolveWorkspacePath(cwd);
     // A shell started in a missing directory never reports shell integration, so fail early instead.
     if (directory && !(await fs.stat(directory).catch(() => undefined))?.isDirectory()) {
       throw new Error(`No directory at ${directory}.`);
     }
-    let terminal = this.liveTerminal(name);
+    let terminal = this.liveTerminal(name, { forNewCommand: true });
     const latest = terminal && this.latest(terminal);
     const busy = this.reserved.get(name) ?? (latest && !latest.ended ? latest.command : undefined);
     if (busy !== undefined) {
@@ -203,7 +216,7 @@ class TerminalManager {
       }
       const run = this.execute(terminal, shellIntegration, command);
       if (!keep_open) {
-        this.closeWhenEnded(run);
+        this.closeWhenEnded(run, close_delay_seconds * 1000);
       }
       return { run };
     } finally {
@@ -235,10 +248,13 @@ class TerminalManager {
     return run;
   }
 
+  /** The open terminals with their latest command; `closing` marks one about to close. */
   list() {
-    return vscode.window.terminals
-      .filter((terminal) => !this.closedHere.has(terminal))
-      .map((terminal) => ({ terminal, latest: this.latest(terminal) }));
+    return vscode.window.terminals.map((terminal) => ({
+      terminal,
+      latest: this.latest(terminal),
+      closing: this.closing.has(terminal) || this.closedHere.has(terminal),
+    }));
   }
 
   /** Clears the terminal's screen and drops its finished commands. */
@@ -275,18 +291,22 @@ class TerminalManager {
   close(name) {
     const terminal = this.terminalNamed(name);
     const running = this.latest(terminal);
-    this.closedHere.add(terminal);
-    terminal.dispose();
+    this.closeNow(terminal);
     return running && !running.ended ? running : undefined;
   }
 
   /**
    * The open terminal named `name`. A terminal closed here, or whose shell exited, stays listed until VS
-   * Code reports the close, and is skipped, so a new command with the same name gets a new terminal.
+   * Code reports the close, and is skipped. A terminal waiting to close still takes input and can be
+   * closed, but `forNewCommand` skips it, so a new command does not land in a terminal about to close.
    */
-  liveTerminal(name) {
+  liveTerminal(name, { forNewCommand = false } = {}) {
     return vscode.window.terminals.findLast(
-      (terminal) => terminal.name === name && !this.closedHere.has(terminal) && !terminal.exitStatus,
+      (terminal) =>
+        terminal.name === name &&
+        !this.closedHere.has(terminal) &&
+        !terminal.exitStatus &&
+        !(forNewCommand && this.closing.has(terminal)),
     );
   }
 
@@ -299,6 +319,7 @@ class TerminalManager {
   }
 
   dispose() {
+    this.closing.forEach((timer) => clearTimeout(timer));
     [...this.history.values(), ...this.closedHistory.values()].flat().forEach((run) => run.dispose());
     this.disposables.forEach((disposable) => disposable.dispose());
   }
