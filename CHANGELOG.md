@@ -1,25 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 ### Added
 
-- Test results: `run_tests` waits and returns which tests passed, failed or were skipped, with file, line
-  and duration; it runs all tests, one file (`file`), one test (`test`, at a line), or tests of a file by
-  name (`tests`), with or without coverage. `test_results` reads the latest run, also one the user
-  started; `test_explorer` lists the tests discovered in a file. Works with any test extension; the live
-  tests cover Jest, Vitest, the Node.js test runner and pytest, and Playwright Test, unittest, JUnit,
-  xUnit (C# Dev Kit), minitest (Ruby LSP), Deno and munit (Metals) were checked by hand on Windows and Linux.
+- `run_tests` waits for the run and returns passed, failed and skipped tests with file, line and
+  duration. Scopes: `all`, `failed`, `last`, `file`, `test` (at a line), `tests` (by name); optional
+  `coverage`.
+- `test_results` reads the latest run, also one started by the user.
+- `test_explorer` lists the tests of a file with line and last result.
+- Works with any Test Explorer extension; live tests cover Jest, Vitest, Node.js test runner and pytest.
 
 ### Changed
 
-- Terminals of `run_in_terminal` and `run_task` close 3 seconds after the command or task ends
-  (`close_delay_seconds`), so the user can see the result.
-- `run_tests` scope `current_file` is now `file`, which takes the file as `path`.
+- Terminals of `run_in_terminal` and `run_task` close 3 seconds after the end; `close_delay_seconds`
+  sets the delay, `keep_open` keeps them.
+- `run_tests` scope `current_file` is now `file`, with `path`; it needs no open editor.
+- Test tools open the Testing view when a file's tests are not loaded yet, keeping editor focus.
 
 ### Fixed
 
-- `list_extensions` no longer takes the folder of an extension run from source for the extensions folder.
+- `list_extensions` finds the extensions folder when the extension runs from source.
 
 ## 1.1.0
 
