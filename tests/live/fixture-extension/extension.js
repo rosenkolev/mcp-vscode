@@ -19,6 +19,7 @@ function activate(context) {
   if (!folder) {
     return;
   }
+  context.subscriptions.push(vscode.commands.registerCommand('mcp-vscode-fixture.echo', (...args) => args));
   const controller = vscode.tests.createTestController('fixture', 'Fixture tests');
   context.subscriptions.push(controller);
   const uri = vscode.Uri.joinPath(folder.uri, 'calc.js');
