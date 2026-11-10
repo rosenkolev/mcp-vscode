@@ -35,6 +35,10 @@ function cloneDefault(value) {
 
 /** Validates one value against its property spec and returns it, converted where the spec asks. */
 function parseValue(key, value, spec) {
+  // An empty schema accepts arbitrary JSON values, as used by command arguments.
+  if (Object.keys(spec).length === 0) {
+    return value;
+  }
   const isType = TYPE_CHECKS[spec.type];
   if (!isType) {
     throw new Error(`"${key}" has the unsupported schema type "${spec.type}".`);
