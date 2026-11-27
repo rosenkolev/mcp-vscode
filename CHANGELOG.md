@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 ### Added
 
@@ -16,6 +16,7 @@
 - `run_in_terminal` names the default shell, e.g. Windows PowerShell 5.1.
 - `get_diagnostics` with a file path checks a file no editor had open.
 - `format_document` calls run one at a time; a "Model is disposed!" failure is retried.
+- `run_command` passes any JSON `args` to the command, instead of failing with "unsupported schema type".
 
 ## 1.2.0
 
