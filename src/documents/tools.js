@@ -10,7 +10,20 @@ const { FileEditor } = require('./review');
 
 const MAX_SELECTION_CHARS = 20000;
 
-async function formatDocument({ path, save }) {
+/** The format_document call running now; calls run one at a time. */
+let formatting = Promise.resolve();
+
+/**
+ * Formats one file at a time: formatters run in parallel can fail with "Model is disposed!" when VS
+ * Code releases a document another call opened. That error is retried once.
+ */
+function formatDocument(args) {
+  const run = formatting.then(() => formatFile(args).catch((error) => (/disposed/i.test(error.message) ? formatFile(args) : Promise.reject(error))));
+  formatting = run.catch(() => undefined);
+  return run;
+}
+
+async function formatFile({ path, save }) {
   const document = await openDocument(path);
   const editor = vscode.workspace.getConfiguration('editor', document);
   const options = { tabSize: editor.get('tabSize'), insertSpaces: editor.get('insertSpaces') };

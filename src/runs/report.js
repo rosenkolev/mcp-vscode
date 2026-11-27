@@ -20,7 +20,7 @@ function waitProperties(waitForExitByDefault) {
       type: 'string',
       format: 'regex',
       description:
-        'Case-insensitive regex. Block until an output line matches (e.g. "ready in|compiled successfully"), the run ends, or the timeout passes. Use for watchers and dev servers.',
+        'Case-insensitive regex. Block until an output line matches (e.g. "ready in|compiled successfully"), the run ends, or the timeout passes. Use for watchers and dev servers. Make it specific: a bare word such as "error" also matches package and file names.',
     },
     timeout_seconds: timeoutProperty(120, 'The run keeps going after a timeout.'),
   };
@@ -51,7 +51,7 @@ async function waitAsRequested(run, { wait_for_exit, wait_for_pattern, timeout_s
       : [];
   const wait = await run.waitFor({ pattern, fromLine, timeoutMs: timeout_seconds * 1000 });
   const outcomes = {
-    pattern: `pattern matched on line ${wait.line}.`,
+    pattern: `pattern matched on line ${wait.line}: ${wait.text?.trim()}`,
     exit: 'run ended.',
     timeout: `timed out after ${timeout_seconds}s; run is still ${run.state}.`,
   };

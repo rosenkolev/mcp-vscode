@@ -166,7 +166,7 @@ class Run {
 
   /**
    * Resolves when the run ends, when `pattern` matches a line at or after `fromLine`, or on timeout.
-   * @returns {Promise<{ reason: 'exit' | 'pattern' | 'timeout', line?: number }>}
+   * @returns {Promise<{ reason: 'exit' | 'pattern' | 'timeout', line?: number, text?: string }>}
    */
   waitFor({ pattern, fromLine = 0, timeoutMs }) {
     return new Promise((resolve) => {
@@ -179,13 +179,15 @@ class Run {
       const check = () => {
         if (pattern) {
           for (let line = Math.max(next, this.droppedLines); line < this.lineCount; line++) {
-            if (pattern.test(this.lines[line - this.droppedLines])) {
-              return finish({ reason: 'pattern', line });
+            const text = this.lines[line - this.droppedLines];
+            if (pattern.test(text)) {
+              return finish({ reason: 'pattern', line, text });
             }
           }
           next = this.lineCount;
-          if (this.partialLine && pattern.test(lastSegment(this.partialLine))) {
-            return finish({ reason: 'pattern', line: next });
+          const partial = lastSegment(this.partialLine);
+          if (partial && pattern.test(partial)) {
+            return finish({ reason: 'pattern', line: next, text: partial });
           }
         }
         if (this.ended) {

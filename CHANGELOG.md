@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `mcpVscode.maxWaitSeconds` (default 50): longest wait of one call, as clients such as Claude Code end
+  calls after 60 s; the reply says to call again to keep waiting.
+
+### Fixed
+
+- `send_to_terminal` with `interrupt` and `text`: waits for the command to stop, then runs the text as a
+  new command.
+- `wait_for_pattern` replies show the matched line.
+- Terminals start without a git pager, so `git diff` and `git log` do not hang.
+- `run_in_terminal` names the default shell, e.g. Windows PowerShell 5.1.
+- `get_diagnostics` with a file path checks a file no editor had open.
+- `format_document` calls run one at a time; a "Model is disposed!" failure is retried.
+
 ## 1.2.0
 
 ### Added

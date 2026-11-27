@@ -76,6 +76,13 @@
           "scope": "application",
           "markdownDescription": "When set, clients must send the header `Authorization: Bearer <token>`. Keeps other local programs out. Read from user settings only. **Copy Claude Code Setup Command** includes the header."
         },
+        "mcpVscode.maxWaitSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 3600,
+          "default": 50,
+          "description": "Longest wait of one tool call (timeout_seconds is capped to it). MCP clients end longer calls, Claude Code after 60 seconds; the tool then says to call again to keep waiting."
+        },
         "mcpVscode.disabledTools": {
           "type": "array",
           "default": [],

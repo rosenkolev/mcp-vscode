@@ -1,6 +1,7 @@
 'use strict';
 
 const vscode = require('vscode');
+const path = require('path');
 const { pathProperty, maxLinesProperty, filterProperty } = require('../shared/schema');
 const { sinceProperty, waitProperties, describeRun, waitAndReport } = require('../runs/report');
 const { closingProperties } = require('../runs/closing');
@@ -28,6 +29,16 @@ function exitCodeNotes(run) {
     : [];
 }
 
+/** The shell new terminals start, for the tool description, so commands are written in its syntax. */
+function defaultShellNote() {
+  const shell = path.basename(vscode.env.shell ?? '');
+  if (!shell) {
+    return '';
+  }
+  const windowsPowerShell = /^powershell(\.exe)?$/i.test(shell) ? ' (Windows PowerShell 5.1: no && or ||, no Unix tools such as tail or xargs)' : '';
+  return ` New terminals run ${shell}${windowsPowerShell}; write commands in its syntax.`;
+}
+
 function describeTerminal({ terminal, latest, closing }) {
   const shell = terminal.shellIntegration
     ? `cwd ${terminal.shellIntegration.cwd?.fsPath ?? 'unknown'}`
@@ -41,7 +52,7 @@ function terminalTools(terminals) {
     {
       name: 'run_in_terminal',
       description:
-        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. The terminal closes close_delay_seconds (default 3) after the command ends, unless keep_open is set; its output stays readable with read_terminal. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent and the terminal stays open.',
+        'Run a shell command in a named VS Code terminal, visible to the user. Creates the terminal in "cwd" if it does not exist; an existing one changes to "cwd" first. Waits for the command to exit by default and returns its exit code and output. The terminal closes close_delay_seconds (default 3) after the command ends, unless keep_open is set; its output stays readable with read_terminal. Needs shell integration (PowerShell, bash, zsh, fish); without it the command is only sent and the terminal stays open. Git runs without a pager.' + defaultShellNote(),
       inputSchema: {
         type: 'object',
         properties: {
@@ -106,7 +117,7 @@ function terminalTools(terminals) {
     {
       name: 'send_to_terminal',
       description:
-        'Type text into a terminal, e.g. "y" to answer a prompt or input for a running program, or press Ctrl+C to interrupt it. Works in task terminals too. With a wait_* argument, then waits like read_terminal and returns the new output.',
+        'Type text into a terminal, e.g. "y" to answer a prompt or input for a running program, or press Ctrl+C to interrupt it. With interrupt, waits for the running command to end before typing; text with Enter at the shell prompt runs as a new command, readable with read_terminal. Works in task terminals too. With a wait_* argument, then waits like read_terminal and returns the new output.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -122,7 +133,10 @@ function terminalTools(terminals) {
         if (args.text === undefined && !args.interrupt) {
           throw new Error('Pass "text", "interrupt": true, or both.');
         }
-        const run = terminals.send(args.terminal, args);
+        const { run, held } = await terminals.send(args.terminal, args);
+        if (held) {
+          return `Sent Ctrl+C to terminal "${args.terminal}", but "${run.command}" is still running, maybe asking to confirm; "${args.text}" was not typed. Answer it with send_to_terminal, or close_terminal.\n${describeRun(run)}`;
+        }
         const sent = [args.interrupt && 'Ctrl+C', args.text !== undefined && `"${args.text}"${args.enter ? ' + Enter' : ''}`];
         const summary = `Sent ${sent.filter(Boolean).join(', then ')} to terminal "${args.terminal}".`;
         if (!run) {

@@ -59,6 +59,7 @@ whether it runs in a VS Code terminal, a chat panel, or another terminal app in 
 | `mcpVscode.port` | `47391` | Port agents connect to |
 | `mcpVscode.authToken` | `""` | Token clients must send; user settings only |
 | `mcpVscode.disabledTools` | `[]` | Tools agents cannot see or run |
+| `mcpVscode.maxWaitSeconds` | `50` | Longest wait of one call; clients such as Claude Code end calls after 60 s |
 
 Commands (Command Palette, under **MCP VS Code**): **Copy Claude Code Setup Command**, **Restart Server**,
 **Show Log**.

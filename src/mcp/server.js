@@ -66,11 +66,12 @@ function hasToken(header, token) {
  * own VS Code window.
  */
 class McpHttpServer {
-  constructor({ name, version, instructions, tools, disabledTools = () => new Set(), authToken = () => '', log }) {
+  constructor({ name, version, instructions, tools, disabledTools = () => new Set(), maxWaitSeconds = () => Infinity, authToken = () => '', log }) {
     this.serverInfo = { name, version };
     this.instructions = instructions;
     this.tools = new Map(tools.map((tool) => [tool.name, tool]));
     this.disabledTools = disabledTools;
+    this.maxWaitSeconds = maxWaitSeconds;
     this.authToken = authToken;
     this.log = log;
     /** @type {import('./router').CallRouter | undefined} */
@@ -237,7 +238,17 @@ class McpHttpServer {
       return toolResult(`${name} is disabled by the user in the VS Code setting "mcpVscode.disabledTools".`, true);
     }
     try {
-      return toolResult(await tool.handler(parseArgs(tool.inputSchema, args ?? {})));
+      const parsed = parseArgs(tool.inputSchema, args ?? {});
+      // A wait longer than the client allows a call would end in its timeout error, without the output.
+      const limit = this.maxWaitSeconds();
+      const capped = parsed.timeout_seconds > limit;
+      if (capped) {
+        parsed.timeout_seconds = limit;
+      }
+      const started = Date.now();
+      const text = await tool.handler(parsed);
+      const cut = capped && Date.now() - started >= limit * 1000;
+      return toolResult(cut ? `${text}\nStopped waiting at ${limit}s, the longest one call waits (setting mcpVscode.maxWaitSeconds); the work goes on. Call again to keep waiting.` : text);
     } catch (error) {
       this.log.warn(`${name} failed: ${error.message}`);
       return toolResult(error.message, true);

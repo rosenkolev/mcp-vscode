@@ -4,6 +4,7 @@ const vscode = require('vscode');
 
 const SETTINGS_SECTION = 'mcpVscode';
 const DISABLED_TOOLS_SETTING = 'disabledTools';
+const DEFAULT_MAX_WAIT_SECONDS = 50;
 
 /**
  * Names of the tools disabled in any settings scope. The scopes add up instead of overriding each other,
@@ -14,6 +15,11 @@ function disabledTools() {
   const inspected = vscode.workspace.getConfiguration(SETTINGS_SECTION).inspect(DISABLED_TOOLS_SETTING);
   const scopes = [inspected?.globalValue, inspected?.workspaceValue];
   return new Set(scopes.flatMap((names) => (Array.isArray(names) ? names : [])));
+}
+
+/** The longest a tool call waits, in seconds: MCP clients end longer calls (Claude Code after 60 s). */
+function maxWaitSeconds() {
+  return vscode.workspace.getConfiguration(SETTINGS_SECTION).get('maxWaitSeconds', DEFAULT_MAX_WAIT_SECONDS);
 }
 
 /** True when a configuration change touches the disabled tools. */
@@ -40,4 +46,4 @@ function checkDisabledTools(toolNames, packageJSON, log) {
   }
 }
 
-module.exports = { disabledTools, affectsDisabledTools, checkDisabledTools };
+module.exports = { disabledTools, maxWaitSeconds, affectsDisabledTools, checkDisabledTools };

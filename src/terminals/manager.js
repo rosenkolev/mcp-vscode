@@ -10,6 +10,12 @@ const { resolveWorkspacePath } = require('../workspace/paths');
 
 const SHELL_INTEGRATION_TIMEOUT_MS = 10000;
 const CD_TIMEOUT_MS = 10000;
+const INTERRUPT_TIMEOUT_MS = 5000;
+/**
+ * Pagers wait for keys no agent presses, e.g. `git diff` in a terminal. PAGER is left alone on Windows,
+ * where PowerShell's `help` would run `cat` as Get-Content.
+ */
+const NO_PAGER_ENV = process.platform === 'win32' ? { GIT_PAGER: 'cat' } : { GIT_PAGER: 'cat', PAGER: 'cat' };
 const MAX_COMMANDS_PER_TERMINAL = 20;
 const MAX_CLOSED_TERMINALS = 20;
 const NO_SHELL_INTEGRATION =
@@ -198,7 +204,7 @@ class TerminalManager {
         terminal && directory && !isSamePath(terminal.shellIntegration?.cwd?.fsPath, directory)
           ? `cd "${directory}"`
           : undefined;
-      terminal ??= vscode.window.createTerminal({ name, cwd: directory });
+      terminal ??= vscode.window.createTerminal({ name, cwd: directory, env: NO_PAGER_ENV });
       terminal.show(true);
 
       const shellIntegration = await shellIntegrationOf(terminal);
@@ -272,17 +278,39 @@ class TerminalManager {
   }
 
   /**
-   * Types `text` into a terminal, e.g. an answer to a prompt; `interrupt` presses Ctrl+C first. Returns the
-   * run that receives the input, if one is running.
+   * Types `text` into a terminal, e.g. an answer to a prompt; `interrupt` presses Ctrl+C first and waits
+   * for the running command to end, as text typed at once would be lost or answer a prompt of the
+   * stopping program ("Terminate batch job (Y/N)?"). Text with Enter typed at the shell prompt runs as a
+   * captured command. Returns the run that receives the input, if one is running, and whether the text
+   * was held back because the interrupted command did not end.
+   * @returns {Promise<{ run?: TerminalRun, held?: boolean }>}
    */
-  send(name, { text, enter, interrupt }) {
+  async send(name, { text, enter, interrupt }) {
     const terminal = this.terminalNamed(name);
+    let running = this.running(terminal);
     if (interrupt) {
       terminal.sendText('\x03', false);
+      if (running) {
+        if ((await running.waitFor({ timeoutMs: INTERRUPT_TIMEOUT_MS })).reason === 'timeout') {
+          return { run: running, held: text !== undefined };
+        }
+        if (text === undefined) {
+          return { run: running };
+        }
+        running = undefined;
+      }
     }
-    if (text !== undefined) {
-      terminal.sendText(text, enter);
+    if (text === undefined) {
+      return { run: running };
     }
+    if (!running && enter && terminal.shellIntegration) {
+      return { run: this.execute(terminal, terminal.shellIntegration, text) };
+    }
+    terminal.sendText(text, enter);
+    return { run: running };
+  }
+
+  running(terminal) {
     const latest = this.latest(terminal);
     return latest && !latest.ended ? latest : undefined;
   }

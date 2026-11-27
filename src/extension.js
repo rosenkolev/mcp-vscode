@@ -5,7 +5,7 @@ const { McpHttpServer, BIND_ADDRESS, ENDPOINT_PATH } = require('./mcp/server');
 const { CallRouter } = require('./mcp/router');
 const { McpEndpoint, authToken } = require('./mcp/endpoint');
 const { WindowRegistry } = require('./mcp/windows');
-const { disabledTools, affectsDisabledTools, checkDisabledTools } = require('./mcp/policy');
+const { disabledTools, maxWaitSeconds, affectsDisabledTools, checkDisabledTools } = require('./mcp/policy');
 const { TaskRunner } = require('./tasks/runner');
 const { taskTools } = require('./tasks/tools');
 const { TerminalManager } = require('./terminals/manager');
@@ -79,6 +79,7 @@ function activate(context) {
     instructions: INSTRUCTIONS,
     tools,
     disabledTools,
+    maxWaitSeconds,
     authToken,
     log,
   });
